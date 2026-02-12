@@ -111,3 +111,42 @@ class LocaleNotifier extends StateNotifier<Locale?> {
 final localeProvider = StateNotifierProvider<LocaleNotifier, Locale?>((ref) {
   return LocaleNotifier();
 });
+
+/// Available font options
+enum AppFontFamily {
+  poppins,  // Google Fonts Poppins (default)
+  roboto,
+  openSans,
+  lato,
+  merriweather,
+  lora,
+  notoSerif,
+  system,   // System default font
+}
+
+/// Font family notifier for managing app font
+class FontFamilyNotifier extends StateNotifier<AppFontFamily> {
+  FontFamilyNotifier() : super(AppFontFamily.poppins) {
+    _loadFontFamily();
+  }
+
+  Future<void> _loadFontFamily() async {
+    final fontKey = HiveService.settingsBox.get('fontFamily');
+    if (fontKey != null && fontKey is String) {
+      state = AppFontFamily.values.firstWhere(
+        (f) => f.name == fontKey,
+        orElse: () => AppFontFamily.poppins,
+      );
+    }
+  }
+
+  Future<void> setFontFamily(AppFontFamily font) async {
+    state = font;
+    await HiveService.settingsBox.put('fontFamily', font.name);
+  }
+}
+
+/// Font family provider
+final fontFamilyProvider = StateNotifierProvider<FontFamilyNotifier, AppFontFamily>((ref) {
+  return FontFamilyNotifier();
+});

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:open_filex/open_filex.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// Check if platform supports opening folder in file manager
 bool get canOpenFolder {
@@ -12,24 +14,41 @@ bool get canOpenFolder {
 Future<bool> openDownloadFolder() async {
   try {
     if (Platform.isAndroid) {
-      // On Android, open the Olib folder in Downloads
+      // On Android, try to open the Olib folder in Downloads using url_launcher
       final path = '/storage/emulated/0/Download/Olib';
       final dir = Directory(path);
-      if (await dir.exists()) {
-        final result = await OpenFilex.open(path);
-        return result.type == ResultType.done;
+      
+      // If Olib folder exists, try to open it; otherwise open Downloads
+      String targetPath = await dir.exists() ? path : '/storage/emulated/0/Download';
+      
+      // Use url_launcher with file:// URI
+      final uri = Uri.parse('file://$targetPath');
+      if (await canLaunchUrl(uri)) {
+        return await launchUrl(uri);
       }
-      // Fallback: try to open the Downloads folder
-      final result = await OpenFilex.open('/storage/emulated/0/Download');
-      return result.type == ResultType.done;
+      
+      // Fallback: Use content:// URI for Downloads
+      final contentUri = Uri.parse('content://com.android.externalstorage.documents/document/primary:Download');
+      if (await canLaunchUrl(contentUri)) {
+        return await launchUrl(contentUri);
+      }
+      
+      return false;
     } else if (Platform.isWindows) {
-      await Process.run('explorer', [Directory.current.path]);
+      // Get the actual Downloads folder on Windows
+      final downloadsDir = await getDownloadsDirectory();
+      final path = downloadsDir?.path ?? r'C:\Users\Public\Downloads';
+      await Process.run('explorer', [path]);
       return true;
     } else if (Platform.isMacOS) {
-      await Process.run('open', [Directory.current.path]);
+      final downloadsDir = await getDownloadsDirectory();
+      final path = downloadsDir?.path ?? '~/Downloads';
+      await Process.run('open', [path]);
       return true;
     } else if (Platform.isLinux) {
-      await Process.run('xdg-open', [Directory.current.path]);
+      final downloadsDir = await getDownloadsDirectory();
+      final path = downloadsDir?.path ?? '~/Downloads';
+      await Process.run('xdg-open', [path]);
       return true;
     }
     return false;
