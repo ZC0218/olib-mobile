@@ -12,4 +12,5 @@ class AppRoutes {
   static const String similarBooks = '/similar-books';
   static const String reader = '/reader';
   static const String prescriber = '/prescriber';
+  static const String qrAuth = '/qr-auth';
 }

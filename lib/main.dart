@@ -17,6 +17,7 @@ import 'screens/settings/settings_screen.dart';
 import 'screens/similar/similar_books_screen.dart';
 import 'screens/reader/reader_screen.dart';
 import 'screens/prescriber/prescriber_screen.dart';
+import 'screens/auth/qr_auth_screen.dart';
 import 'services/hive_service.dart';
 import 'services/ad_service.dart';
 import 'l10n/app_localizations.dart';
@@ -85,6 +86,7 @@ class MyApp extends ConsumerWidget {
         AppRoutes.settings: (context) => const SettingsScreen(),
         AppRoutes.similarBooks: (context) => const SimilarBooksScreen(),
         AppRoutes.prescriber: (context) => const PrescriberScreen(),
+        AppRoutes.qrAuth: (context) => const QrAuthScreen(),
         AppRoutes.reader: (context) {
           final args = ModalRoute.of(context)!.settings.arguments as ReaderArgs;
           return ReaderScreen(url: args.url, title: args.title);

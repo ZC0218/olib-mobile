@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/prescription.dart';
 import '../../models/book.dart';
 import '../../providers/prescriber_provider.dart';
+import '../../providers/backend_auth_provider.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../l10n/app_localizations.dart';
@@ -15,9 +16,10 @@ class PrescriberScreen extends ConsumerStatefulWidget {
 }
 
 class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _inputController = TextEditingController();
   late AnimationController _animController;
+  late AnimationController _loadingController;
   late Animation<double> _fadeAnim;
 
   @override
@@ -27,6 +29,10 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
+    _loadingController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
     _fadeAnim = CurvedAnimation(
       parent: _animController,
       curve: Curves.easeInOut,
@@ -41,18 +47,40 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
   void dispose() {
     _inputController.dispose();
     _animController.dispose();
+    _loadingController.dispose();
     super.dispose();
   }
 
-  void _diagnoseWithTheme(String themeId) {
-    ref.read(prescriberProvider.notifier).diagnose(themeId);
+  /// 检查授权状态，未授权则跳转扫码页
+  Future<bool> _ensureAuthorized() async {
+    final authState = ref.read(backendAuthProvider);
+    if (authState.isAuthorized) return true;
+
+    final result = await Navigator.pushNamed(context, AppRoutes.qrAuth);
+    return result == true;
+  }
+
+  void _diagnoseWithTheme(String themeId) async {
+    if (!await _ensureAuthorized()) return;
+    final locale = Localizations.localeOf(context).languageCode;
+    ref.read(prescriberProvider.notifier).diagnose(
+      input: themeId,
+      inputType: 'theme',
+      language: locale == 'zh' ? 'zh' : 'en',
+    );
     _animController.forward(from: 0);
   }
 
-  void _diagnoseWithInput() {
+  void _diagnoseWithInput() async {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
-    ref.read(prescriberProvider.notifier).diagnose(text);
+    if (!await _ensureAuthorized()) return;
+    final locale = Localizations.localeOf(context).languageCode;
+    ref.read(prescriberProvider.notifier).diagnose(
+      input: text,
+      inputType: 'free',
+      language: locale == 'zh' ? 'zh' : 'en',
+    );
     _animController.forward(from: 0);
     FocusScope.of(context).unfocus();
   }
@@ -173,6 +201,10 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
             ),
             const SizedBox(height: 20),
 
+            // 格式筛选
+            _buildFormatPicker(isZh),
+            const SizedBox(height: 16),
+
             // 预设主题卡片
             ..._buildThemeCards(isZh),
 
@@ -263,6 +295,51 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
     );
   }
 
+  Widget _buildFormatPicker(bool isZh) {
+    final currentFormat = ref.watch(prescriberProvider).preferredFormat;
+    final formats = <String?>[null, 'pdf', 'epub', 'mobi'];
+    final labels = <String?>['${isZh ? '不限' : 'Any'}', 'PDF', 'EPUB', 'MOBI'];
+
+    return Row(
+      children: [
+        Icon(Icons.filter_list_rounded,
+            size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 6),
+        Text(
+          isZh ? '格式' : 'Format',
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        ),
+        const SizedBox(width: 10),
+        ...List.generate(formats.length, (i) {
+          final fmt = formats[i];
+          final selected = currentFormat == fmt;
+          return Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: ChoiceChip(
+              label: Text(
+                labels[i]!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: selected ? Colors.white : AppColors.textSecondary,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              selected: selected,
+              selectedColor: AppColors.primary,
+              backgroundColor: Colors.grey[100],
+              side: BorderSide.none,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              onSelected: (_) {
+                ref.read(prescriberProvider.notifier).setFormat(fmt);
+              },
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   List<Widget> _buildThemeCards(bool isZh) {
     final themes = prescriberThemes;
     final List<Widget> rows = [];
@@ -306,16 +383,9 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 动画图标
-            TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.0, end: 1.0),
-              duration: const Duration(seconds: 2),
-              builder: (context, value, child) {
-                return Transform.rotate(
-                  angle: value * 6.28,
-                  child: child,
-                );
-              },
+            // 动画图标 — 持续旋转
+            RotationTransition(
+              turns: _loadingController,
               child: Container(
                 width: 72,
                 height: 72,
@@ -332,7 +402,7 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
             ),
             const SizedBox(height: 24),
             Text(
-              isZh ? 'AI 正在为你挑选好书...' : 'AI is picking books for you...',
+              isZh ? '正在为你挑选好书...' : 'AI is picking books for you...',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -345,6 +415,15 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
               style: TextStyle(
                 fontSize: 14,
                 color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppColors.primary,
               ),
             ),
           ],
@@ -489,7 +568,9 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-      child: Container(
+      child: GestureDetector(
+        onTap: tip.isSearching ? null : () => _onGetBook(tip),
+        child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.grey[50],
@@ -612,6 +693,7 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

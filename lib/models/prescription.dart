@@ -18,6 +18,16 @@ class ReadingTip {
     this.isSearching = false,
   });
 
+  /// 从后端 JSON 解析
+  factory ReadingTip.fromJson(Map<String, dynamic> json) {
+    return ReadingTip(
+      bookName: json['book_name'] as String? ?? '',
+      author: json['author'] as String? ?? '',
+      reason: json['reason'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+    );
+  }
+
   ReadingTip copyWith({
     String? bookName,
     String? author,
@@ -46,6 +56,17 @@ class ReadingBag {
     required this.diagnosis,
     required this.tips,
   });
+
+  /// 从后端 JSON 解析
+  factory ReadingBag.fromJson(Map<String, dynamic> json) {
+    final tipsJson = json['tips'] as List<dynamic>? ?? [];
+    return ReadingBag(
+      diagnosis: json['diagnosis'] as String? ?? '',
+      tips: tipsJson
+          .map((t) => ReadingTip.fromJson(t as Map<String, dynamic>))
+          .toList(),
+    );
+  }
 
   ReadingBag copyWith({
     String? diagnosis,

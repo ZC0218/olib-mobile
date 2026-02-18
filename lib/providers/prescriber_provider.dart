@@ -4,10 +4,12 @@ import '../models/book.dart';
 import '../services/ai_service.dart';
 import '../services/zlibrary_api.dart';
 import 'zlibrary_provider.dart';
+import 'backend_auth_provider.dart';
 
-/// AI 服务 Provider
+/// AI 服务 Provider — 读取后端 JWT 注入
 final aiServiceProvider = Provider<AiService>((ref) {
-  return MockAiService();
+  final authState = ref.watch(backendAuthProvider);
+  return RemoteAiService(token: authState.jwt ?? '');
 });
 
 /// 诊断状态
@@ -18,22 +20,26 @@ class PrescriberState {
   final PrescriberStatus status;
   final ReadingBag? result;
   final String? errorMessage;
+  final String? preferredFormat; // 用户首选格式：pdf / epub / mobi / null(不限)
 
   const PrescriberState({
     this.status = PrescriberStatus.idle,
     this.result,
     this.errorMessage,
+    this.preferredFormat,
   });
 
   PrescriberState copyWith({
     PrescriberStatus? status,
     ReadingBag? result,
     String? errorMessage,
+    String? preferredFormat,
   }) {
     return PrescriberState(
       status: status ?? this.status,
       result: result ?? this.result,
       errorMessage: errorMessage ?? this.errorMessage,
+      preferredFormat: preferredFormat ?? this.preferredFormat,
     );
   }
 }
@@ -46,13 +52,33 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
   PrescriberNotifier(this._aiService, this._api)
       : super(const PrescriberState());
 
+  /// 设置首选格式
+  void setFormat(String? format) {
+    state = state.copyWith(preferredFormat: format);
+  }
+
   /// 执行诊断
-  Future<void> diagnose(String symptoms) async {
-    state = const PrescriberState(status: PrescriberStatus.loading);
+  Future<void> diagnose({
+    required String input,
+    String inputType = 'auto',
+    String language = 'zh',
+  }) async {
+    state = PrescriberState(
+      status: PrescriberStatus.loading,
+      preferredFormat: state.preferredFormat,
+    );
 
     try {
-      final bag = await _aiService.diagnose(symptoms);
-      state = PrescriberState(status: PrescriberStatus.done, result: bag);
+      final bag = await _aiService.diagnose(
+        input: input,
+        inputType: inputType,
+        language: language,
+      );
+      state = PrescriberState(
+        status: PrescriberStatus.done,
+        result: bag,
+        preferredFormat: state.preferredFormat,
+      );
 
       // 异步匹配 ZLibrary 书籍
       _matchBooks(bag);
@@ -60,6 +86,7 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
       state = PrescriberState(
         status: PrescriberStatus.error,
         errorMessage: e.toString(),
+        preferredFormat: state.preferredFormat,
       );
     }
   }
@@ -69,16 +96,20 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
     for (int i = 0; i < bag.tips.length; i++) {
       final tip = bag.tips[i];
 
-      // 标记正在搜索
-      final updatedTips = List<ReadingTip>.from(bag.tips);
-      updatedTips[i] = tip.copyWith(isSearching: true);
+      // 标记正在搜索 — 使用最新 state
+      final currentTips = List<ReadingTip>.from(
+        state.result?.tips ?? bag.tips,
+      );
+      currentTips[i] = tip.copyWith(isSearching: true);
       state = state.copyWith(
-        result: bag.copyWith(tips: updatedTips),
+        result: (state.result ?? bag).copyWith(tips: currentTips),
       );
 
       try {
+        final fmt = state.preferredFormat;
         final response = await _api.search(
           message: '${tip.bookName} ${tip.author}',
+          extensions: fmt != null ? [fmt] : null,
           limit: 5,
         );
 
@@ -92,7 +123,7 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
           }
         }
 
-        // 更新匹配结果
+        // 更新匹配结果 — 使用最新 state
         final finalTips = List<ReadingTip>.from(
           state.result?.tips ?? bag.tips,
         );
@@ -116,9 +147,9 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
     }
   }
 
-  /// 重置状态
+  /// 重置状态（保留格式设置）
   void reset() {
-    state = const PrescriberState();
+    state = PrescriberState(preferredFormat: state.preferredFormat);
   }
 }
 
