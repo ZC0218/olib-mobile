@@ -9,7 +9,7 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装Flutter 3.38.5
+      - name: 安装Flutter 3.41.2
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.2' # 与项目适配的版本
@@ -18,15 +18,42 @@ jobs:
       - name: 安装项目依赖
         run: flutter pub get
 
-      - name: 构建iOS无签名Release包
-        run: flutter build ios --release --no-codesign # --no-codesign 跳过苹果签名（免开发者账号）
-
-      - name: 打包成无签名IPA
+      - name: 安装iOS CocoaPods依赖
         run: |
-          mkdir -p Payload # 创建Payload文件夹（IPA的必选结构）
-          cp -r build/ios/iphoneos/Runner.app Payload/ # 复制编译后的App到Payload
-          zip -r hikari_novel.ipa Payload/ # 压缩成IPA文件
-          rm -rf Payload # 清理临时文件夹
+          cd ios
+          pod install --repo-update
+          cd ..
+
+      - name: 创建导出选项配置文件，用于绕过签名
+        run: |
+          cat > ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>automatic</key>
+              <key>signingCertificate</key>
+              <string>-</string>
+          </dict>
+          </plist>
+          EOF
+
+      - name: 构建iOS Archive（跳过签名）
+        run: flutter build ios --release --no-codesign --archive
+
+      - name: 导出IPA（使用xcodebuild绕过签名检查）
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/ios/archive/Runner.xcarchive \
+            -exportPath . \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates
+
+      - name: 重命名IPA文件
+        run: mv Runner.ipa hikari_novel.ipa
 
       - name: 上传IPA产物（供下载）
         uses: actions/upload-artifact@v4
