@@ -18,10 +18,47 @@ jobs:
       - name: 安装项目依赖
         run: flutter pub get
 
+      - name: 修复Podfile，指定iOS部署目标（解决url_launcher_ios报错）
+        run: |
+          cd ios
+          # 检查Podfile是否存在，不存在则生成
+          if [ ! -f Podfile ]; then
+            flutter podfile
+          fi
+          # 创建新的Podfile，在开头添加platform声明，并添加post_install钩子
+          cat > Podfile << 'EOF'
+          # 加载Flutter核心辅助方法
+          flutter_application_path = '..'
+          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+
+          # 全局指定iOS最低部署目标
+          platform :ios, '12.0'
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+
+            flutter_install_all_ios_pods flutter_application_path
+
+            post_install do |installer|
+              installer.pods_project.targets.each do |target|
+                flutter_additional_ios_build_settings(target)
+                # 强制将所有Pod的部署目标提升到12.0
+                target.build_configurations.each do |config|
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+                end
+              end
+            end
+          end
+          EOF
+          cat Podfile # 打印修复后的Podfile，便于调试
+          cd ..
+
       - name: 安装iOS CocoaPods依赖
         run: |
           cd ios
-          pod install --repo-update
+          pod deintegrate # 清理旧的Pod缓存
+          pod install --repo-update # 强制更新Pod仓库，避免依赖报错
           cd ..
 
       - name: 创建导出选项配置文件，用于绕过签名
@@ -34,7 +71,7 @@ jobs:
               <key>method</key>
               <string>development</string>
               <key>signingStyle</key>
-              <string>automatic</key>
+              <string>automatic</string>
               <key>signingCertificate</key>
               <string>-</string>
           </dict>
