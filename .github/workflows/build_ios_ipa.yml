@@ -36,21 +36,39 @@ jobs:
           cat Podfile >> Podfile.temp
           mv Podfile.temp Podfile
 
-          # 2. 检查是否有post_install块，如果没有就添加一个
+          # 2. 使用awk安全地添加post_install块
+          awk '
+          BEGIN { in_post_install = 0 }
+          /^post_install do |installer|/ {
+            in_post_install = 1
+            print
+            print "  installer.pods_project.targets.each do |target|"
+            print "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\""
+            print "      target.build_configurations.each do |config|"
+            print "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"12.0\""
+            print "      end"
+            print "    end"
+            print "  end"
+            next
+          }
+          /^end/ && in_post_install {
+            in_post_install = 0
+          }
+          !in_post_install { print }
+          ' Podfile > Podfile.temp && mv Podfile.temp Podfile
+
+          # 3. 如果没有post_install块，就添加一个
           if ! grep -q "post_install do |installer|" Podfile; then
             echo "post_install do |installer|" >> Podfile
+            echo "  installer.pods_project.targets.each do |target|" >> Podfile
+            echo "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\"" >> Podfile
+            echo "      target.build_configurations.each do |config|" >> Podfile
+            echo "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"12.0\"" >> Podfile
+            echo "      end" >> Podfile
+            echo "    end" >> Podfile
+            echo "  end" >> Podfile
             echo "end" >> Podfile
           fi
-
-          # 3. 在post_install块中插入代码，强制提升所有Pod的部署目标
-          sed -i '' '/post_install do |installer|/a\
-            installer.pods_project.targets.each do |target|\
-              if target.respond_to?(:product_type) and target.product_type == "com.apple.product-type.framework"\
-                target.build_configurations.each do |config|\
-                  config.build_settings['\''IPHONEOS_DEPLOYMENT_TARGET'\''] = '\''12.0'\'','\
-                end\
-              end\
-            end' Podfile
 
           cat Podfile # 打印修复后的Podfile，便于调试
           cd ..
