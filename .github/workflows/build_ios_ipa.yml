@@ -46,28 +46,39 @@ jobs:
           pod install --repo-update # 强制更新Pod仓库，避免依赖报错
           cd ..
 
-      # 6. 编译iOS无签名Release包（真实设备版，体积小）
-      - name: Build iOS Release (No Code Sign)
-        run: flutter build ios --release --no-codesign --no-simulator
-
-      # 7. 打包成IPA文件（适配olib-mobile的产物路径）
-      - name: Package to IPA
+      # 6. 创建导出选项配置文件，用于绕过签名
+      - name: Create Export Options Plist
         run: |
-          # 创建Payload目录（IPA标准结构）
-          mkdir -p Payload
-          # 复制编译后的App文件到Payload
-          if [ -d "build/ios/iphoneos/Runner.app" ]; then
-            cp -r build/ios/iphoneos/Runner.app Payload/
-          else
-            # 兼容备选路径
-            cp -r build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app Payload/
-          fi
-          # 压缩成IPA
-          zip -r olib-mobile-ios.ipa Payload/
-          # 清理临时目录
-          rm -rf Payload
+          cat > ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+          </dict>
+          </plist>
+          EOF
 
-      # 8. 上传IPA产物（编译完成后可下载）
+      # 7. 编译并导出IPA（使用ipa命令，彻底绕过签名）
+      - name: Build and Export iOS IPA (No Code Sign)
+        run: flutter build ipa --release --export-options-plist=ExportOptions.plist
+
+      # 8. 重命名并移动IPA文件
+      - name: Rename and Move IPA
+        run: |
+          # 查找生成的IPA文件并重命名
+          IPA_FILE=$(find build/ios/ipa -name "*.ipa" -type f)
+          if [ -n "$IPA_FILE" ]; then
+            mv "$IPA_FILE" olib-mobile-ios.ipa
+          else
+            echo "❌ 未找到生成的IPA文件"
+            exit 1
+          fi
+
+      # 9. 上传IPA产物（编译完成后可下载）
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
