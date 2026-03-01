@@ -1,97 +1,127 @@
-name: Flutter iOS Build IPA
+name: Build olib-mobile iOS IPA
 on:
-  workflow_dispatch: # 手动触发编译
+  workflow_dispatch: # 手动触发（推荐，避免代码推送自动编译）
+  # push: # 可选：代码推送到main分支时自动编译
+  #   branches: [main]
 
 jobs:
   build-ios:
-    runs-on: macos-latest # 调用GitHub的macOS服务器（关键：只有macOS能编译iOS包）
+    runs-on: macos-latest # 必须用macOS环境（iOS编译专属）
     steps:
-      - name: 检出代码
+      # 1. 检出仓库代码
+      - name: Checkout olib-mobile Code
         uses: actions/checkout@v4
+        with:
+          repository: ZC0218/olib-mobile # 精准指向目标仓库
+          ref: main # 编译main分支（可根据需要改dev/test）
+          fetch-depth: 0 # 拉取完整提交记录，避免依赖拉取失败
 
-      - name: 安装Flutter 3.41.2
+      # 2. 配置Node环境（匹配Vue2项目，推荐14.x稳定版）
+      - name: Setup Node.js 14.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '14.21.3'
+          cache: 'npm' # 缓存npm依赖，加速编译
+
+      # 3. 安装前端项目依赖（Vue2 + Vant + 移动端适配依赖）
+      - name: Install Frontend Dependencies
+        run: |
+          npm install --registry=https://registry.npmmirror.com # 国内镜像加速
+          # 校验依赖安装完整性，避免漏装
+          if [ ! -d "node_modules" ]; then
+            echo "❌ 依赖安装失败，重新安装"
+            npm install --force --registry=https://registry.npmmirror.com
+          fi
+
+      # 4. 构建前端静态资源（Vue项目打包成dist）
+      - name: Build Frontend Static Files
+        run: |
+          npm run build # 需确保package.json中有build脚本（如vue-cli-service build）
+          # 校验打包结果
+          if [ ! -d "dist" ]; then
+            echo "❌ 前端打包失败，无dist目录"
+            exit 1
+          fi
+
+      # 5. 安装Flutter（用于将前端资源打包成iOS App）
+      - name: Setup Flutter 3.19.0
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.2' # 与项目适配的版本
-          channel: 'stable' # 稳定版
+          flutter-version: '3.19.0'
+          channel: 'stable'
+          cache: true
 
-      - name: 安装项目依赖
-        run: flutter pub get
-
-      - name: 修复Podfile，指定iOS部署目标为13.0（解决url_launcher_ios报错）
+      # 6. 初始化Flutter项目（桥接前端静态资源）
+      - name: Init Flutter Project for iOS
         run: |
-          cd ios
-          # 直接创建一个最小化的Podfile，不依赖任何外部文件
-          cat > Podfile << 'EOF'
-          # 全局指定iOS最低部署目标
-          platform :ios, '13.0'
-
-          target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
-            platform :ios, '13.0' # 确保Runner目标也设置为13.0
-
-            # 手动指定所有Flutter插件的路径（根据你的项目调整）
-            pod 'url_launcher_ios', :path => '.symlinks/plugins/url_launcher_ios/ios'
-            # 如果有其他插件，继续在这里添加，例如：
-            # pod 'shared_preferences_ios', :path => '.symlinks/plugins/shared_preferences_ios/ios'
-
-            post_install do |installer|
-              installer.pods_project.targets.each do |target|
-                # 强制将所有Pod的部署目标提升到13.0
-                target.build_configurations.each do |config|
-                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-                  # 确保所有Pod都使用与Runner相同的Swift版本
-                  config.build_settings['SWIFT_VERSION'] = '5.0'
-                end
-              end
-            end
-          end
-          EOF
-
-          cat Podfile # 打印修复后的Podfile，便于调试
+          # 创建Flutter项目（若不存在）
+          if [ ! -d "flutter_ios" ]; then
+            flutter create flutter_ios
+          fi
+          cd flutter_ios
+          flutter pub get
+          # 将前端dist目录复制到Flutter项目的assets
+          rm -rf assets
+          mkdir -p assets
+          cp -r ../dist/* assets/
+          # 修改pubspec.yaml，添加assets资源
+          sed -i '' '/flutter:/a\
+            assets:\n    - assets/' pubspec.yaml
           cd ..
 
-      - name: 安装iOS CocoaPods依赖
+      # 7. 修复iOS Podfile（解决部署目标/依赖兼容问题）
+      - name: Fix iOS Podfile
         run: |
-          cd ios
-          pod deintegrate # 清理旧的Pod缓存
-          pod install --repo-update # 强制更新Pod仓库，避免依赖报错
+          cd flutter_ios/ios
+          # 生成标准Podfile
+          flutter podfile
+          # 强制指定iOS 13.0部署目标
+          echo "platform :ios, '13.0'" > Podfile.temp
+          cat Podfile >> Podfile.temp
+          mv Podfile.temp Podfile
+          # 添加post_install钩子，统一所有Pod的部署目标
+          sed -i '' '$a\
+          post_install do |installer|\
+            installer.pods_project.targets.each do |target|\
+              flutter_additional_ios_build_settings(target)\
+              target.build_configurations.each do |config|\
+                config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0"\
+              end\
+            end\
+          end' Podfile
+          # 安装Pod依赖
+          pod deintegrate
+          pod install --repo-update
+          cd ../..
+
+      # 8. 编译Flutter iOS模拟器版Debug包（免签名）
+      - name: Build Flutter iOS Debug (Simulator)
+        run: |
+          cd flutter_ios
+          flutter build ios --debug --no-codesign --simulator
           cd ..
 
-      - name: 创建导出选项配置文件，用于绕过签名
+      # 9. 打包成IPA文件（标准iOS IPA结构）
+      - name: Package to IPA
         run: |
-          cat > ExportOptions.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>development</string>
-              <key>signingStyle</key>
-              <string>automatic</string>
-              <key>signingCertificate</key>
-              <string>-</string>
-          </dict>
-          </plist>
-          EOF
+          # 创建IPA必需的Payload目录
+          mkdir -p Payload
+          # 复制编译后的App文件
+          if [ -d "flutter_ios/build/ios/iphonesimulator/Runner.app" ]; then
+            cp -r flutter_ios/build/ios/iphonesimulator/Runner.app Payload/
+          else
+            echo "❌ 未找到Runner.app，编译失败"
+            exit 1
+          fi
+          # 压缩成IPA
+          zip -r olib-mobile-ios-simulator.ipa Payload/
+          # 清理临时文件
+          rm -rf Payload
 
-      - name: 构建iOS Archive（跳过签名）
-        run: flutter build ios --release --no-codesign --archive
-
-      - name: 导出IPA（使用xcodebuild绕过签名检查）
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath build/ios/archive/Runner.xcarchive \
-            -exportPath . \
-            -exportOptionsPlist ExportOptions.plist \
-            -allowProvisioningUpdates
-
-      - name: 重命名IPA文件
-        run: mv Runner.ipa hikari_novel.ipa
-
-      - name: 上传IPA产物（供下载）
+      # 10. 上传IPA产物（编译完成后可下载）
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hikari-novel-ios-ipa
-          path: hikari_novel.ipa
+          name: olib-mobile-ipa
+          path: olib-mobile-ios-simulator.ipa
+          retention-days: 30 # 产物保留30天
