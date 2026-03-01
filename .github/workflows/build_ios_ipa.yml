@@ -22,7 +22,7 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
-      # 4. 修复Podfile，指定iOS部署目标（解决url_launcher_ios报错）
+      # 4. 修复Podfile，指定iOS部署目标为13.0（解决url_launcher_ios报错）
       - name: Fix Podfile for iOS Deployment Target
         run: |
           cd ios
@@ -30,9 +30,10 @@ jobs:
           if [ ! -f Podfile ]; then
             flutter podfile
           fi
-          # 创建一个临时的Podfile，在开头添加platform声明
-          echo "platform :ios, '12.0'" > Podfile.temp
-          cat Podfile >> Podfile.temp
+          # 1. 在Podfile开头强制指定iOS 13.0
+          echo "platform :ios, '13.0'" > Podfile.temp
+          # 2. 处理原Podfile，将Runner目标的平台也设为13.0
+          sed "s/platform :ios, '[0-9]*\.[0-9]*'/platform :ios, '13.0'/g" Podfile >> Podfile.temp
           mv Podfile.temp Podfile
           cat Podfile # 打印修复后的Podfile，便于调试
           cd ..
