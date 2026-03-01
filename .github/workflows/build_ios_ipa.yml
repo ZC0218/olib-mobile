@@ -22,18 +22,36 @@ jobs:
       - name: Install Flutter Dependencies
         run: flutter pub get
 
-      # 4. 安装iOS CocoaPods依赖（关键：iOS编译必需）
+      # 4. 修复Podfile，指定iOS部署目标（解决url_launcher_ios报错）
+      - name: Fix Podfile for iOS Deployment Target
+        run: |
+          cd ios
+          # 检查Podfile是否存在，不存在则生成
+          if [ ! -f Podfile ]; then
+            flutter podfile
+          fi
+          # 在Podfile开头强制指定iOS 12.0或更高版本
+          sed -i '' '1i\
+platform :ios, \'12.0\'
+          ' Podfile
+          # 确保Runner目标也指定了平台
+          sed -i '' 's/target \'Runner\' do/target \'Runner\' do\n  platform :ios, \'12.0\'/' Podfile
+          cat Podfile # 打印修复后的Podfile，便于调试
+          cd ..
+
+      # 5. 安装iOS CocoaPods依赖（关键：iOS编译必需）
       - name: Install CocoaPods Dependencies
         run: |
           cd ios
+          pod deintegrate # 清理旧的Pod缓存
           pod install --repo-update # 强制更新Pod仓库，避免依赖报错
           cd ..
 
-      # 5. 编译iOS无签名Release包（真实设备版，体积小）
+      # 6. 编译iOS无签名Release包（真实设备版，体积小）
       - name: Build iOS Release (No Code Sign)
         run: flutter build ios --release --no-codesign --no-simulator
 
-      # 6. 打包成IPA文件（适配olib-mobile的产物路径）
+      # 7. 打包成IPA文件（适配olib-mobile的产物路径）
       - name: Package to IPA
         run: |
           # 创建Payload目录（IPA标准结构）
@@ -50,7 +68,7 @@ jobs:
           # 清理临时目录
           rm -rf Payload
 
-      # 7. 上传IPA产物（编译完成后可下载）
+      # 8. 上传IPA产物（编译完成后可下载）
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
