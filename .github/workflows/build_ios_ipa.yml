@@ -21,22 +21,8 @@ jobs:
       - name: 修复Podfile，指定iOS部署目标为13.0（解决url_launcher_ios报错）
         run: |
           cd ios
-          # 如果Podfile不存在，创建一个最基础的
-          if [ ! -f Podfile ]; then
-            cat > Podfile << 'EOF'
-          target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
-          end
-          EOF
-          fi
-
-          # 1. 重写整个Podfile，确保平台和Runner目标都设置为13.0
+          # 直接创建一个最小化的Podfile，不依赖任何外部文件
           cat > Podfile << 'EOF'
-          # 加载Flutter核心辅助方法
-          flutter_application_path = '..'
-          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
-
           # 全局指定iOS最低部署目标
           platform :ios, '13.0'
 
@@ -45,14 +31,18 @@ jobs:
             use_modular_headers!
             platform :ios, '13.0' # 确保Runner目标也设置为13.0
 
-            flutter_install_all_ios_pods flutter_application_path
+            # 手动指定所有Flutter插件的路径（根据你的项目调整）
+            pod 'url_launcher_ios', :path => '.symlinks/plugins/url_launcher_ios/ios'
+            # 如果有其他插件，继续在这里添加，例如：
+            # pod 'shared_preferences_ios', :path => '.symlinks/plugins/shared_preferences_ios/ios'
 
             post_install do |installer|
               installer.pods_project.targets.each do |target|
-                flutter_additional_ios_build_settings(target)
                 # 强制将所有Pod的部署目标提升到13.0
                 target.build_configurations.each do |config|
                   config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                  # 确保所有Pod都使用与Runner相同的Swift版本
+                  config.build_settings['SWIFT_VERSION'] = '5.0'
                 end
               end
             end
