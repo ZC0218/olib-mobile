@@ -1,0 +1,58 @@
+name: Build olib-mobile iOS IPA
+on:
+  workflow_dispatch: # 手动触发编译（推荐）
+
+jobs:
+  build-ios:
+    runs-on: macos-latest # 必须用macOS环境
+    steps:
+      # 1. 检出项目代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. 安装Flutter（匹配项目依赖的稳定版）
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.5' # 适配大多数Flutter项目的稳定版
+          channel: 'stable'
+          cache: true # 缓存依赖，加速编译
+
+      # 3. 安装Flutter项目依赖
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+
+      # 4. 安装iOS CocoaPods依赖（关键：iOS编译必需）
+      - name: Install CocoaPods Dependencies
+        run: |
+          cd ios
+          pod install --repo-update # 强制更新Pod仓库，避免依赖报错
+          cd ..
+
+      # 5. 编译iOS无签名Release包（真实设备版，体积小）
+      - name: Build iOS Release (No Code Sign)
+        run: flutter build ios --release --no-codesign --no-simulator
+
+      # 6. 打包成IPA文件（适配olib-mobile的产物路径）
+      - name: Package to IPA
+        run: |
+          # 创建Payload目录（IPA标准结构）
+          mkdir -p Payload
+          # 复制编译后的App文件到Payload
+          if [ -d "build/ios/iphoneos/Runner.app" ]; then
+            cp -r build/ios/iphoneos/Runner.app Payload/
+          else
+            # 兼容备选路径
+            cp -r build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app Payload/
+          fi
+          # 压缩成IPA
+          zip -r olib-mobile-ios.ipa Payload/
+          # 清理临时目录
+          rm -rf Payload
+
+      # 7. 上传IPA产物（编译完成后可下载）
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: olib-mobile-ipa
+          path: olib-mobile-ios.ipa
