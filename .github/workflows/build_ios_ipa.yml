@@ -1,49 +1,45 @@
 name: Build olib-mobile iOS IPA
 on:
-  workflow_dispatch: # 手动触发（推荐，避免代码推送自动编译）
-  # push: # 可选：代码推送到main分支时自动编译
-  #   branches: [main]
+  workflow_dispatch: # 手动触发编译
 
 jobs:
   build-ios:
-    runs-on: macos-latest # 必须用macOS环境（iOS编译专属）
+    runs-on: macos-latest # 必须用macOS环境
     steps:
       # 1. 检出仓库代码
       - name: Checkout olib-mobile Code
         uses: actions/checkout@v4
         with:
-          repository: ZC0218/olib-mobile # 精准指向目标仓库
-          ref: main # 编译main分支（可根据需要改dev/test）
-          fetch-depth: 0 # 拉取完整提交记录，避免依赖拉取失败
+          repository: ZC0218/olib-mobile
+          ref: main
+          fetch-depth: 0
 
-      # 2. 配置Node环境（匹配Vue2项目，推荐14.x稳定版）
-      - name: Setup Node.js 14.x
+      # 2. 配置兼容arm64的Node环境（替换为14.21.0，适配macOS arm64）
+      - name: Setup Node.js 14.x (Compatible with arm64)
         uses: actions/setup-node@v4
         with:
-          node-version: '14.21.3'
-          cache: 'npm' # 缓存npm依赖，加速编译
+          node-version: '14.21.0' # 替换为arm64兼容的14.x版本
+          cache: 'npm'
 
-      # 3. 安装前端项目依赖（Vue2 + Vant + 移动端适配依赖）
+      # 3. 安装前端项目依赖
       - name: Install Frontend Dependencies
         run: |
-          npm install --registry=https://registry.npmmirror.com # 国内镜像加速
-          # 校验依赖安装完整性，避免漏装
+          npm install --registry=https://registry.npmmirror.com
           if [ ! -d "node_modules" ]; then
             echo "❌ 依赖安装失败，重新安装"
             npm install --force --registry=https://registry.npmmirror.com
           fi
 
-      # 4. 构建前端静态资源（Vue项目打包成dist）
+      # 4. 构建前端静态资源
       - name: Build Frontend Static Files
         run: |
-          npm run build # 需确保package.json中有build脚本（如vue-cli-service build）
-          # 校验打包结果
+          npm run build
           if [ ! -d "dist" ]; then
             echo "❌ 前端打包失败，无dist目录"
             exit 1
           fi
 
-      # 5. 安装Flutter（用于将前端资源打包成iOS App）
+      # 5. 安装Flutter（用于桥接前端资源到iOS）
       - name: Setup Flutter 3.19.0
         uses: subosito/flutter-action@v2
         with:
@@ -51,35 +47,29 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # 6. 初始化Flutter项目（桥接前端静态资源）
+      # 6. 初始化Flutter项目（嵌入前端静态资源）
       - name: Init Flutter Project for iOS
         run: |
-          # 创建Flutter项目（若不存在）
           if [ ! -d "flutter_ios" ]; then
             flutter create flutter_ios
           fi
           cd flutter_ios
           flutter pub get
-          # 将前端dist目录复制到Flutter项目的assets
           rm -rf assets
           mkdir -p assets
           cp -r ../dist/* assets/
-          # 修改pubspec.yaml，添加assets资源
           sed -i '' '/flutter:/a\
             assets:\n    - assets/' pubspec.yaml
           cd ..
 
-      # 7. 修复iOS Podfile（解决部署目标/依赖兼容问题）
+      # 7. 修复iOS Podfile（统一部署目标为13.0）
       - name: Fix iOS Podfile
         run: |
           cd flutter_ios/ios
-          # 生成标准Podfile
           flutter podfile
-          # 强制指定iOS 13.0部署目标
           echo "platform :ios, '13.0'" > Podfile.temp
           cat Podfile >> Podfile.temp
           mv Podfile.temp Podfile
-          # 添加post_install钩子，统一所有Pod的部署目标
           sed -i '' '$a\
           post_install do |installer|\
             installer.pods_project.targets.each do |target|\
@@ -89,39 +79,34 @@ jobs:
               end\
             end\
           end' Podfile
-          # 安装Pod依赖
           pod deintegrate
           pod install --repo-update
           cd ../..
 
-      # 8. 编译Flutter iOS模拟器版Debug包（免签名）
+      # 8. 编译Flutter iOS模拟器版Debug包
       - name: Build Flutter iOS Debug (Simulator)
         run: |
           cd flutter_ios
           flutter build ios --debug --no-codesign --simulator
           cd ..
 
-      # 9. 打包成IPA文件（标准iOS IPA结构）
+      # 9. 打包成IPA文件
       - name: Package to IPA
         run: |
-          # 创建IPA必需的Payload目录
           mkdir -p Payload
-          # 复制编译后的App文件
           if [ -d "flutter_ios/build/ios/iphonesimulator/Runner.app" ]; then
             cp -r flutter_ios/build/ios/iphonesimulator/Runner.app Payload/
           else
             echo "❌ 未找到Runner.app，编译失败"
             exit 1
           fi
-          # 压缩成IPA
           zip -r olib-mobile-ios-simulator.ipa Payload/
-          # 清理临时文件
           rm -rf Payload
 
-      # 10. 上传IPA产物（编译完成后可下载）
+      # 10. 上传IPA产物
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: olib-mobile-ipa
           path: olib-mobile-ios-simulator.ipa
-          retention-days: 30 # 产物保留30天
+          retention-days: 30
