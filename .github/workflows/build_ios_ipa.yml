@@ -18,7 +18,7 @@ jobs:
       - name: 安装项目依赖
         run: flutter pub get
 
-      - name: 修复Podfile，指定iOS部署目标（解决url_launcher_ios报错）
+      - name: 修复Podfile，指定iOS部署目标为13.0（解决url_launcher_ios报错）
         run: |
           cd ios
           # 如果Podfile不存在，创建一个最基础的
@@ -31,44 +31,33 @@ jobs:
           EOF
           fi
 
-          # 1. 在Podfile开头强制指定iOS 12.0
-          echo "platform :ios, '12.0'" > Podfile.temp
-          cat Podfile >> Podfile.temp
-          mv Podfile.temp Podfile
+          # 1. 重写整个Podfile，确保平台和Runner目标都设置为13.0
+          cat > Podfile << 'EOF'
+          # 加载Flutter核心辅助方法
+          flutter_application_path = '..'
+          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
 
-          # 2. 使用awk安全地添加post_install块
-          awk '
-          BEGIN { in_post_install = 0 }
-          /^post_install do |installer|/ {
-            in_post_install = 1
-            print
-            print "  installer.pods_project.targets.each do |target|"
-            print "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\""
-            print "      target.build_configurations.each do |config|"
-            print "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"12.0\""
-            print "      end"
-            print "    end"
-            print "  end"
-            next
-          }
-          /^end/ && in_post_install {
-            in_post_install = 0
-          }
-          !in_post_install { print }
-          ' Podfile > Podfile.temp && mv Podfile.temp Podfile
+          # 全局指定iOS最低部署目标
+          platform :ios, '13.0'
 
-          # 3. 如果没有post_install块，就添加一个
-          if ! grep -q "post_install do |installer|" Podfile; then
-            echo "post_install do |installer|" >> Podfile
-            echo "  installer.pods_project.targets.each do |target|" >> Podfile
-            echo "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\"" >> Podfile
-            echo "      target.build_configurations.each do |config|" >> Podfile
-            echo "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"12.0\"" >> Podfile
-            echo "      end" >> Podfile
-            echo "    end" >> Podfile
-            echo "  end" >> Podfile
-            echo "end" >> Podfile
-          fi
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+            platform :ios, '13.0' # 确保Runner目标也设置为13.0
+
+            flutter_install_all_ios_pods flutter_application_path
+
+            post_install do |installer|
+              installer.pods_project.targets.each do |target|
+                flutter_additional_ios_build_settings(target)
+                # 强制将所有Pod的部署目标提升到13.0
+                target.build_configurations.each do |config|
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                end
+              end
+            end
+          end
+          EOF
 
           cat Podfile # 打印修复后的Podfile，便于调试
           cd ..
