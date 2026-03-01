@@ -18,39 +18,31 @@ jobs:
       - name: 安装项目依赖
         run: flutter pub get
 
+      - name: 生成标准Podfile
+        run: |
+          cd ios
+          # 让Flutter生成一个正确的、包含所有路径的Podfile
+          flutter podfile
+          cd ..
+
       - name: 修复Podfile，指定iOS部署目标（解决url_launcher_ios报错）
         run: |
           cd ios
-          # 检查Podfile是否存在，不存在则生成
-          if [ ! -f Podfile ]; then
-            flutter podfile
-          fi
-          # 创建新的Podfile，在开头添加platform声明，并添加post_install钩子
-          cat > Podfile << 'EOF'
-          # 加载Flutter核心辅助方法
-          flutter_application_path = '..'
-          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+          # 1. 在Podfile开头强制指定iOS 12.0
+          echo "platform :ios, '12.0'" > Podfile.temp
+          cat Podfile >> Podfile.temp
+          mv Podfile.temp Podfile
 
-          # 全局指定iOS最低部署目标
-          platform :ios, '12.0'
+          # 2. 在post_install块中添加代码，强制提升所有Pod的部署目标
+          # 找到post_install do |installer|这一行，在其下插入代码
+          sed -i '' '/post_install do |installer|/a\
+              installer.pods_project.targets.each do |target|\
+                flutter_additional_ios_build_settings(target)\
+                target.build_configurations.each do |config|\
+                  config.build_settings['\''IPHONEOS_DEPLOYMENT_TARGET'\''] = '\''12.0'\'','\
+                end\
+              end' Podfile
 
-          target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
-
-            flutter_install_all_ios_pods flutter_application_path
-
-            post_install do |installer|
-              installer.pods_project.targets.each do |target|
-                flutter_additional_ios_build_settings(target)
-                # 强制将所有Pod的部署目标提升到12.0
-                target.build_configurations.each do |config|
-                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
-                end
-              end
-            end
-          end
-          EOF
           cat Podfile # 打印修复后的Podfile，便于调试
           cd ..
 
