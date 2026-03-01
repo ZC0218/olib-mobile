@@ -4,46 +4,53 @@ on:
 
 jobs:
   build-ios:
-    runs-on: macos-latest # 必须用macOS环境
+    runs-on: macos-latest # 必须用macOS环境（iOS编译专属）
     steps:
       # 1. 检出项目代码
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # 稳定版checkout动作
 
       # 2. 安装Flutter（匹配项目依赖的稳定版）
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.5' # 适配大多数Flutter项目的稳定版
-          channel: 'stable'
-          cache: true # 缓存依赖，加速编译
+          flutter-version: '3.38.5' # 适配3.10+ Dart版本，兼容项目依赖
+          channel: 'stable' # 稳定版，避免开发版兼容性问题
+          cache: true # 缓存依赖，加速二次编译
 
       # 3. 安装Flutter项目依赖
       - name: Install Flutter Dependencies
-        run: flutter pub get
+        run: flutter pub get # 标准依赖安装命令
 
-      # 4. 彻底修复Podfile，统一所有Pod的部署目标为12.0
+      # 4. 修复Podfile（核心：统一部署目标+加载Flutter辅助方法）
       - name: Fix Podfile for iOS Deployment Target
         run: |
           cd ios
-          # 检查Podfile是否存在，不存在则生成
+          # 若Podfile不存在，先通过Flutter生成默认文件
           if [ ! -f Podfile ]; then
             flutter podfile
           fi
-          # 创建新的Podfile，在开头指定平台，并添加post_install钩子
+          # 重写Podfile：加载Flutter配置+统一部署目标+强制修复第三方Pod版本
           cat > Podfile << 'EOF'
+          # 加载Flutter核心辅助方法（解决undefined method报错）
+          flutter_application_path = '..'
+          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+
+          # 全局指定iOS最低部署目标（解决url_launcher_ios兼容问题）
           platform :ios, '12.0'
 
           target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
+            use_frameworks! # Flutter iOS必备配置
+            use_modular_headers! # 避免第三方Pod头文件冲突
 
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+            # 安装Flutter iOS Pod依赖（标准写法）
+            flutter_install_all_ios_pods flutter_application_path
 
+            # 强制统一所有Pod的部署目标（解决DKPhotoGallery等旧库兼容问题）
             post_install do |installer|
               installer.pods_project.targets.each do |target|
-                flutter_additional_ios_build_settings(target)
-                # 强制将所有Pod的部署目标提升到12.0
+                flutter_additional_ios_build_settings(target) # Flutter必备配置
+                # 遍历所有配置，强制设置为12.0
                 target.build_configurations.each do |config|
                   config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
                 end
@@ -51,34 +58,38 @@ jobs:
             end
           end
           EOF
-          cat Podfile # 打印修复后的Podfile，便于调试
+          # 打印Podfile内容，便于调试（非必需，但建议保留）
+          cat Podfile
           cd ..
 
-      # 5. 安装iOS CocoaPods依赖（关键：iOS编译必需）
+      # 5. 安装iOS CocoaPods依赖（清理缓存+强制更新）
       - name: Install CocoaPods Dependencies
         run: |
           cd ios
-          pod deintegrate # 清理旧的Pod缓存
-          pod install --repo-update # 强制更新Pod仓库，避免依赖报错
+          pod deintegrate # 彻底清理旧Pod缓存，避免残留冲突
+          pod install --repo-update # 强制更新Pod仓库，拉取最新依赖
           cd ..
 
-      # 6. 编译iOS模拟器版Debug包（支持模拟器）
+      # 6. 编译iOS模拟器Debug包（模拟器仅支持Debug模式）
       - name: Build iOS Debug for Simulator
         run: flutter build ios --debug --no-codesign --simulator
+        # --debug：模拟器不支持Release模式
+        # --no-codesign：绕过签名（无开发者账号必备）
+        # --simulator：指定编译模拟器版本
 
-      # 7. 打包成模拟器版IPA
+      # 7. 打包成模拟器版IPA（标准IPA结构）
       - name: Package to Simulator IPA
         run: |
-          # 创建Payload目录（IPA标准结构）
+          # 创建IPA必需的Payload目录
           mkdir -p Payload
-          # 复制编译后的App文件到Payload（模拟器路径）
+          # 校验并复制编译产物（模拟器版App路径）
           if [ -d "build/ios/iphonesimulator/Runner.app" ]; then
             cp -r build/ios/iphonesimulator/Runner.app Payload/
           else
-            echo "❌ 未找到Runner.app"
+            echo "❌ 编译产物不存在，路径：build/ios/iphonesimulator/Runner.app"
             exit 1
           fi
-          # 压缩成IPA
+          # 压缩成IPA文件（命名清晰，便于识别）
           zip -r olib-mobile-ios-simulator-debug.ipa Payload/
           # 清理临时目录
           rm -rf Payload
@@ -87,5 +98,5 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: olib-mobile-ipa
-          path: olib-mobile-ios-simulator-debug.ipa
+          name: olib-mobile-ipa # 产物名称，便于识别
+          path: olib-mobile-ios-simulator-debug.ipa # 产物路径，精准指向生成的IPA
