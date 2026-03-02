@@ -18,38 +18,56 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Fix Dependencies and iOS Version
+      - name: Fix Podfile and Deployment Target
         run: |
           flutter pub get
-          # 自动将 Podfile 中的平台版本提升到 13.0，解决 url_launcher 报错
-          sed -i '' "s/platform :ios, '12.0'/platform :ios, '13.0'/g" ios/Podfile
-          sed -i '' "s/platform :ios, '11.0'/platform :ios, '13.0'/g" ios/Podfile
+          # 强行修改 Podfile，将全局 iOS 版本提升至 13.0 并禁用所有插件的签名
           cd ios
-          pod install
+          echo "platform :ios, '13.0'" > Podfile.new
+          cat Podfile >> Podfile.new
+          mv Podfile.new Podfile
+          # 在 Podfile 末尾添加强制禁用签名的后置钩子
+          cat <<EOF >> Podfile
 
-      - name: Force Disable Signing
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                config.build_settings['ENABLE_BITCODE'] = 'NO'
+                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+              end
+            end
+          end
+          EOF
+          pod install --repo-update
+
+      - name: Bruteforce Disable Xcode Signing
         run: |
-          # 抹除项目文件中的所有签名和团队信息，强制进入无签名模式
+          # 暴力抹除项目文件中的签名要求
           sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER =/ //g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM =/ //g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
           
-          # 针对 Flutter 编译环境的额外补丁
+          # 在 Flutter 配置中注入禁用签名参数
           echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Generated.xcconfig
+          echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
 
-      - name: Build iOS Release (No Sign)
+      - name: Build iOS (No Sign)
         run: |
-          # 使用 --no-codesign 并且指定不预编译，避开部分签名检查
-          flutter build ios --release --no-codesign --no-tree-shake-icons
+          # 使用强制覆盖参数进行编译
+          flutter build ios --release --no-codesign \
+            --extra-gen-snapshot-options="--no-used-proxy-pack" \
+            --build-number=1 \
+            --build-name=1.0.0
 
       - name: Create Unsigned IPA
         run: |
           mkdir -p Payload
-          # 将编译好的 .app 文件夹放入 Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          # 打包为 IPA
+          # 自动寻找生成的 .app 文件夹并打包
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
           zip -r olib-mobile-unsigned.ipa Payload
           
       - name: Upload IPA Artifact
