@@ -1,114 +1,42 @@
-name: Build iOS Unsigned IPA
+name: Build Unsigned IPA
 
 on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+  workflow_dispatch: # 在 GitHub Actions 页面手动点击运行
 
 jobs:
-  build_ios:
+  build:
+    name: Build Unsigned iOS App
     runs-on: macos-latest
-
+    
     steps:
-      - name: Checkout 代码
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 设置 Flutter
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: 'stable'
+          cache: true
 
-      - name: Flutter 版本确认
-        run: flutter --version
-
-      # 🔥 核心修复：完整补全 Book 类的所有缺失字段（id/name/title/author/extension/filesizeString）
-      - name: 完整修复 Book 模型类
-        run: |
-          # 直接重写 Book 类文件，包含项目调用的所有核心字段
-          mkdir -p lib/models
-          cat > lib/models/book.dart << 'EOF'
-          class Book {
-            final String id;
-            final String name;
-            final String title;
-            final String? author;
-            final String? extension;
-            final String? filesizeString;
-
-            Book({
-              required this.id,
-              required this.name,
-              required this.title,
-              this.author,
-              this.extension,
-              this.filesizeString,
-            });
-
-            // 可选：添加空值安全的 getter，避免运行时报错
-            String get safeTitle => title;
-            String get safeAuthor => author ?? '';
-            String get safeExtension => extension ?? '';
-            String get safeFilesizeString => filesizeString ?? '';
-          }
-          EOF
-          echo "✅ 已生成完整的 Book 类（包含 id/name/title/author/extension/filesizeString）"
-          cat lib/models/book.dart # 打印验证
-
-      - name: 获取依赖
+      - name: Install dependencies
         run: flutter pub get
 
-      # 🔥 关键：在 Podfile 中强制所有 Pod 的部署目标为 12.0
-      - name: 修复 Podfile 部署目标
+      - name: Build iOS Release (No Sign)
         run: |
-          cd ios
-          # 确保 Podfile 存在
-          flutter pub get
-          # 重写 Podfile，强制部署目标为 12.0
-          cat > Podfile << 'EOF'
-          platform :ios, '12.0'
+          # 使用 --no-codesign 跳过签名步骤
+          flutter build ios --release --no-codesign
 
-          flutter_application_path = '..'
-          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
-
-          target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
-            flutter_install_all_ios_pods flutter_application_path
-
-            post_install do |installer|
-              installer.pods_project.targets.each do |target|
-                flutter_additional_ios_build_settings(target)
-                target.build_configurations.each do |config|
-                  # 强制所有 Pod 的部署目标为 12.0
-                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
-                end
-              end
-            end
-          end
-          EOF
-          cat Podfile # 打印验证
-          cd ..
-
-      # 🔥 关键：使用 Flutter 官方命令，自动处理 Pods 并构建
-      - name: Flutter 构建 iOS（Debug 模拟器版，绕过所有限制）
+      - name: Create Unsigned IPA
         run: |
-          flutter build ios --debug --no-codesign --simulator --verbose
-
-      - name: 打包 IPA 并校验
-        run: |
-          APP_PATH="build/ios/iphonesimulator/Debug-iphonesimulator/Runner.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "❌ 编译失败：未找到 Runner.app"
-            exit 1
-          fi
-          mkdir -p build/ipa/Payload
-          cp -R "$APP_PATH" build/ipa/Payload/
-          zip -r Olib-Unsigned.ipa build/ipa/Payload/
-          echo "✅ IPA 打包完成"
-
-      - name: 上传 IPA 产物
+          # 创建 Payload 目录并将 .app 放入其中，模拟 IPA 结构
+          mkdir -p Payload
+          # 查找生成的 .app 目录并拷贝
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          # 压缩成 .ipa 文件
+          zip -r olib-mobile-unsigned.ipa Payload
+          
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: olib-unsigned-ipa
-          path: Olib-Unsigned.ipa
-          retention-days: 7
+          name: olib-mobile-unsigned-ipa
+          path: olib-mobile-unsigned.ipa
