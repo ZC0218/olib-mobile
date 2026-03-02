@@ -1,155 +1,59 @@
-name: Cloud Build olib-mobile iOS IPA (Simulator)
+name: Build iOS IPA
+
 on:
-  workflow_dispatch: # 仅手动触发，避免自动编译
+  workflow_dispatch: # 支持手动触发编译
 
 jobs:
-  build-ipa:
+  build:
     runs-on: macos-latest
+    
     steps:
-      # ===================== 第一步：准备基础环境 =====================
-      - name: Checkout olib-mobile Source
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
         with:
-          repository: ZC0218/olib-mobile
-          ref: main
-          path: olib-mobile
+          java-version: '17'
+          distribution: 'temurin'
 
-      # 移除了 Setup Xcode 步骤，直接使用环境默认的最新版 Xcode
-      - name: Use default Xcode version
-        run: xcodebuild -version # 打印当前 Xcode 版本，用于调试
-
-      - name: Setup Node.js (升级到16.x，原生支持arm64)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '16.x' # 关键修改：从14.x升级到16.x
-          cache: 'npm'
-          cache-dependency-path: olib-mobile/package-lock.json
-
-      # ===================== 第二步：打包H5静态资源 =====================
-      - name: Install H5 Dependencies
+      - name: Setup CocoaPods
         run: |
-          cd olib-mobile
-          # 强制修复原仓库依赖冲突
-          npm install --force --registry=https://registry.npmmirror.com
-          # 生成适配iOS WebView的H5资源
-          npm run build
-          # 校验打包结果
-          if [ ! -d "dist" ]; then
-            echo "❌ H5打包失败，无dist目录"
-            exit 1
-          fi
+          sudo gem install cocoapods
+          pod --version
 
-      # ===================== 第三步：创建iOS原生壳工程 =====================
-      - name: Create iOS Shell Project (WKWebView)
+      - name: Install Dependencies
         run: |
-          # 创建Xcode工程
-          xcodebuild -create-project \
-            -project OlibMobile.xcodeproj \
-            -target OlibMobile \
-            -language Objective-C \
-            -platform iOS
+          # 如果项目中有 gradlew，先给权限
+          chmod +x ./gradlew
+          # 运行 KMP 的依赖下载或 Pod 安装
+          # ./gradlew podInstall 
 
-          # 创建核心代码文件
-          mkdir -p OlibMobile
+      - name: Build Framework / Archive
+        run: |
+          # 针对 KMP 项目，通常先编译生成 framework
+          ./gradlew :composeApp:assembleReleaseX64 
           
-          # 1. ViewController.h
-          cat > OlibMobile/ViewController.h << 'EOF'
-          #import <UIKit/UIKit.h>
-          #import <WebKit/WebKit.h>
-          @interface ViewController : UIViewController<WKNavigationDelegate>
-          @property (nonatomic, strong) WKWebView *webView;
-          @end
-          EOF
+          # 执行 Xcode 编译命令
+          # 注意：这里需要根据你的项目名称修改 Scheme 和 Configuration
+          xcodebuild -workspace iosApp/iosApp.xcworkspace \
+                     -scheme iosApp \
+                     -configuration Release \
+                     -sdk iphoneos \
+                     -derivedDataPath build/derivedData \
+                     archive -path build/iosApp.xcarchive \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGNING_REQUIRED=NO
 
-          # 2. ViewController.m (加载本地H5资源)
-          cat > OlibMobile/ViewController.m << 'EOF'
-          #import "ViewController.h"
-          @implementation ViewController
-          - (void)viewDidLoad {
-              [super viewDidLoad];
-              // 配置WebView
-              WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-              self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds configuration:config];
-              self.webView.navigationDelegate = self;
-              [self.view addSubview:self.webView];
-              
-              // 加载H5资源（从bundle读取）
-              NSURL *htmlURL = [[NSBundle mainBundle] URLForResource:@"dist/index" withExtension:@"html"];
-              [self.webView loadRequest:[NSURLRequest requestWithURL:htmlURL]];
-              
-              // 适配全屏
-              self.webView.scrollView.bounces = NO;
-              self.navigationController.navigationBarHidden = YES;
-          }
-          - (void)viewWillLayoutSubviews {
-              [super viewWillLayoutSubviews];
-              self.webView.frame = self.view.bounds;
-          }
-          @end
-          EOF
-
-          # 3. AppDelegate.m
-          cat > OlibMobile/AppDelegate.m << 'EOF'
-          #import "AppDelegate.h"
-          #import "ViewController.h"
-          @implementation AppDelegate
-          - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-              self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-              ViewController *vc = [[ViewController alloc] init];
-              self.window.rootViewController = [[UINavigationController alloc] initWithRootViewController:vc];
-              [self.window makeKeyAndVisible];
-              return YES;
-          }
-          @end
-          EOF
-
-          # 4. AppDelegate.h
-          cat > OlibMobile/AppDelegate.h << 'EOF'
-          #import <UIKit/UIKit.h>
-          @interface AppDelegate : UIResponder <UIApplicationDelegate>
-          @property (strong, nonatomic) UIWindow *window;
-          @end
-          EOF
-
-          # 复制H5资源到iOS工程（作为bundle资源）
-          cp -r olib-mobile/dist .
-          # 添加H5资源到Xcode工程（修改pbxproj配置）
-          xcodeproj=$(find . -name "*.xcodeproj" -type d)
-          perl -pi -e 's/(PBXResourcesBuildPhase.*?)(\n\s+end)/$1\n\t\t\t-dist\/\n$2/s' "$xcodeproj/project.pbxproj"
-
-      # ===================== 第四步：编译iOS工程为IPA（模拟器版，免证书） =====================
-      - name: Build iOS Project (Simulator, No Code Sign)
+      - name: Export IPA (Unsigned)
         run: |
-          # 设置编译参数（模拟器架构，免签名）
-          xcodebuild \
-            -project OlibMobile.xcodeproj \
-            -scheme OlibMobile \
-            -sdk iphonesimulator \
-            -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.0' \
-            build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            IPHONEOS_DEPLOYMENT_TARGET=13.0
+          # 创建 Payload 文件夹并打包为 IPA (由于没有证书，这里生成的是未签名的 IPA)
+          mkdir -p build/Payload
+          cp -r build/iosApp.xcarchive/Products/Applications/*.app build/Payload/
+          cd build && zip -r olib-mobile-unsigned.ipa Payload/
 
-          # 打包为IPA（标准结构）
-          mkdir -p Payload
-          cp -r build/Debug-iphonesimulator/OlibMobile.app Payload/
-          zip -r olib-mobile-ios-simulator.ipa Payload/
-          rm -rf Payload
-
-      # ===================== 第五步：上传IPA产物（可直接下载） =====================
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: olib-mobile-ipa-simulator
-          path: olib-mobile-ios-simulator.ipa
-          retention-days: 7 # 产物保留7天
-
-      # ===================== 错误兜底：输出编译日志 =====================
-      - name: Upload Build Logs (if failed)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcode-build-logs
-          path: ~/Library/Developer/Xcode/DerivedData/
+          name: olib-mobile-ipa
+          path: build/olib-mobile-unsigned.ipa
