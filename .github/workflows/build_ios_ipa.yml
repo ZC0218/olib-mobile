@@ -11,40 +11,40 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - name: Checkout 代码
-      uses: actions/checkout@v4
+      - name: Checkout 代码
+        uses: actions/checkout@v4
 
-    - name: 设置 Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        flutter-version: 'stable'
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
 
-    - name: 获取 Flutter 依赖
-      run: flutter pub get
+      - name: Flutter 版本确认
+        run: flutter --version
 
-    - name: 安装 CocoaPods 依赖
-      run: |
-        cd ios
-        pod install
+      - name: 获取依赖
+        run: flutter pub get
 
-    - name: 构建 iOS（无签名）
-      working-directory: ios
-      run: |
-        flutter build ios --release --no-codesign
+      - name: 安装 CocoaPods
+        run: |
+          cd ios
+          pod install
 
-    - name: 创建 Payload 目录
-      run: |
-        mkdir -p ipa/Payload
-        cp -R build/ios/iphoneos/Runner.app ipa/Payload/
+      - name: 构建 iOS (无签名)
+        run: flutter build ios --release --no-codesign
 
-    - name: 生成 IPA
-      run: |
-        cd ipa
-        zip -qr ../Olib-Unsigned.ipa Payload
-      # 现在上层目录有 Olib-Unsigned.ipa
+      - name: 创建 IPA 目录
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
 
-    - name: 上传 IPA 产物
-      uses: actions/upload-artifact@v3
-      with:
-        name: olib-unsigned-ipa
-        path: Olib-Unsigned.ipa
+      - name: 生成 IPA
+        run: |
+          cd build/ipa
+          zip -r ../../Olib-Unsigned.ipa Payload
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: olib-unsigned-ipa
+          path: Olib-Unsigned.ipa
