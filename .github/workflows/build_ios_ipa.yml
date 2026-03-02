@@ -18,15 +18,20 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Prepare iOS Environment
+      - name: Fix Podfile and Project
         run: |
           flutter pub get
           cd ios
-          # 1. 彻底重置 Podfile，确保环境纯净
+          # 1. 强行抹除 Xcode 项目文件里的所有 Development Team ID 和 签名设置
+          # 这一步是让 Xcode 闭嘴的关键
+          sed -i '' 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = [^;]*;/PROVISIONING_PROFILE_SPECIFIER = "";/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = [^;]*;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = [^;]*;/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
+          
+          # 2. 准备 Podfile (沿用之前成功的逻辑)
           rm -f Podfile Podfile.lock
           flutter build ios --no-codesign --release --no-tree-shake-icons || true
-          
-          # 2. 强制修改版本并注入禁用签名逻辑
           sed -i '' "s/platform :ios, .*/platform :ios, '13.0'/g" Podfile
           sed -i '' '/post_install do |installer|/,$d' Podfile
           cat <<EOF >> Podfile
@@ -44,18 +49,22 @@ jobs:
           EOF
           pod install --repo-update
 
-      - name: Final Build with Hardcoded Overrides
+      - name: Force Global Signing Disable
         run: |
-          # 核心改动：在构建命令中通过 --extra-front-end-options 
-          # 和直接透传编译器参数来彻底杀死签名校验
-          flutter build ios --release --no-codesign --no-tree-shake-icons \
-            --xcconfig-overrides=ios/Flutter/Generated.xcconfig \
-            --build-name=1.0.0 --build-number=1 \
-            --verbose \
-            --extra-gen-snapshot-options="--no-codesign" || \
-          # 如果上面失败，尝试直接使用 xcodebuild 逻辑的变体
-          flutter build ios --release --no-codesign --no-tree-shake-icons \
-            --code-sign-identity="" --code-signing-required=NO --code-signing-allowed=NO
+          # 在 Generated.xcconfig 中注入环境变量，双重保险
+          mkdir -p ios/Flutter
+          {
+            echo "CODE_SIGNING_ALLOWED=NO"
+            echo "CODE_SIGNING_REQUIRED=NO"
+            echo "CODE_SIGN_IDENTITY="
+            echo "EXPANDED_CODE_SIGN_IDENTITY="
+            echo "CODE_SIGNING_INJECT_BASE_ENTITLEMENTS=NO"
+          } >> ios/Flutter/Generated.xcconfig
+
+      - name: Final Unsigned Build
+        run: |
+          # 仅使用官方认可的参数，避免再次触发参数识别错误
+          flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Create Unsigned IPA
         run: |
