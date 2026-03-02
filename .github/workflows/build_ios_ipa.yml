@@ -1,4 +1,4 @@
-name: Build Unsigned App (Total Decoupling)
+name: Build Unsigned App (Native Force)
 
 on:
   workflow_dispatch:
@@ -18,60 +18,63 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Surgical Project Modification
+      - name: Build Flutter Framework (AOT)
         run: |
           flutter pub get
+          # 关键点 1：只编译代码和资源，不触发最后的 Xcode 签名校验
+          flutter build ios --release --no-codesign --no-tree-shake-icons --build-number=1
+
+      - name: Patch Pods for iOS 13
+        run: |
           cd ios
-          # 1. 深度清理：彻底抹除项目文件中所有的 Team ID 和 签名证书要求
-          # 这一行会查找所有 pbxproj 文件并把 DEVELOPMENT_TEAM 这一行彻底删掉
-          find . -name "*.pbxproj" -exec sed -i '' '/DEVELOPMENT_TEAM/d' {} +
-          find . -name "*.pbxproj" -exec sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' {} +
-          find . -name "*.pbxproj" -exec sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' {} +
-          
-          # 2. 构造一个绝对纯净、不带任何冲突可能的 Podfile
-          rm -f Podfile Podfile.lock
-          flutter build ios --no-codesign --release --no-tree-shake-icons || true
-          
-          # 强制指定 iOS 13 平台
+          # 关键点 2：暴力解决 url_launcher 等插件的版本问题
           sed -i '' "s/platform :ios, .*/platform :ios, '13.0'/g" Podfile
-          
-          # 3. 注入极简的 post_install，只保留核心逻辑，确保不报 "multiple hooks"
-          # 我们先用 sed 删掉 Flutter 默认生成的 post_install 到 end 的内容，然后自己重写
-          sed -i '' '/post_install do |installer|/,$d' Podfile
-          cat <<EOF >> Podfile
+          # 注入一个万能的 post_install，强行关闭所有 Target 的签名
+          cat <<EOF > patch.rb
           post_install do |installer|
             installer.pods_project.targets.each do |target|
-              flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                config.build_settings['ENABLE_BITCODE'] = 'NO'
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-                config.build_settings['CODE_SIGN_IDENTITY'] = ''
-                config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
               end
             end
           end
           EOF
+          cat patch.rb >> Podfile
           pod install --repo-update
 
-      - name: Final Execution with Environment Lockdown
+      - name: Force Native Xcode Build
         run: |
-          # 通过显式定义环境变量，锁定 Xcode 构建过程
-          export CODE_SIGNING_ALLOWED=NO
-          export CODE_SIGNING_REQUIRED=NO
-          export CODE_SIGN_IDENTITY=""
-          export PROVISIONING_PROFILE_SPECIFIER=""
-          
-          flutter build ios --release --no-codesign --no-tree-shake-icons
+          cd ios
+          # 关键点 3：直接绕过 flutter build，用原生命令强行链接二进制
+          # 使用 -allowProvisioningDeviceRegistration=NO 彻底锁死联网检查
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            | xcpretty
 
-      - name: Package for TrollStore
+      - name: Manual IPA Packaging
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
+          # 寻找编译出的二进制文件夹
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d | grep "Release-iphoneos" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Error: Runner.app not found!"
+            APP_PATH=$(find build/ios/iphoneos -name "Runner.app" -type d | head -n 1)
+          fi
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "Failed to find Runner.app"
             exit 1
           fi
+          
           cp -r "$APP_PATH" Payload/
           zip -r olib-mobile-unsigned.ipa Payload
           
