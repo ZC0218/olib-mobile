@@ -1,59 +1,50 @@
-name: Build iOS IPA
+name: Build iOS Unsigned IPA
 
 on:
-  workflow_dispatch: # 支持手动触发编译
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build_ios:
+    name: 构建 iOS 未签名 IPA
     runs-on: macos-latest
-    
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout 代码
+      uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    - name: 设置 Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: 'stable'
 
-      - name: Setup CocoaPods
-        run: |
-          sudo gem install cocoapods
-          pod --version
+    - name: 获取 Flutter 依赖
+      run: flutter pub get
 
-      - name: Install Dependencies
-        run: |
-          # 如果项目中有 gradlew，先给权限
-          chmod +x ./gradlew
-          # 运行 KMP 的依赖下载或 Pod 安装
-          # ./gradlew podInstall 
+    - name: 安装 CocoaPods 依赖
+      run: |
+        cd ios
+        pod install
 
-      - name: Build Framework / Archive
-        run: |
-          # 针对 KMP 项目，通常先编译生成 framework
-          ./gradlew :composeApp:assembleReleaseX64 
-          
-          # 执行 Xcode 编译命令
-          # 注意：这里需要根据你的项目名称修改 Scheme 和 Configuration
-          xcodebuild -workspace iosApp/iosApp.xcworkspace \
-                     -scheme iosApp \
-                     -configuration Release \
-                     -sdk iphoneos \
-                     -derivedDataPath build/derivedData \
-                     archive -path build/iosApp.xcarchive \
-                     CODE_SIGNING_ALLOWED=NO \
-                     CODE_SIGNING_REQUIRED=NO
+    - name: 构建 iOS（无签名）
+      working-directory: ios
+      run: |
+        flutter build ios --release --no-codesign
 
-      - name: Export IPA (Unsigned)
-        run: |
-          # 创建 Payload 文件夹并打包为 IPA (由于没有证书，这里生成的是未签名的 IPA)
-          mkdir -p build/Payload
-          cp -r build/iosApp.xcarchive/Products/Applications/*.app build/Payload/
-          cd build && zip -r olib-mobile-unsigned.ipa Payload/
+    - name: 创建 Payload 目录
+      run: |
+        mkdir -p ipa/Payload
+        cp -R build/ios/iphoneos/Runner.app ipa/Payload/
 
-      - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: olib-mobile-ipa
-          path: build/olib-mobile-unsigned.ipa
+    - name: 生成 IPA
+      run: |
+        cd ipa
+        zip -qr ../Olib-Unsigned.ipa Payload
+      # 现在上层目录有 Olib-Unsigned.ipa
+
+    - name: 上传 IPA 产物
+      uses: actions/upload-artifact@v3
+      with:
+        name: olib-unsigned-ipa
+        path: Olib-Unsigned.ipa
