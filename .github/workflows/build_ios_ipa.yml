@@ -7,7 +7,6 @@ on:
 
 jobs:
   build_ios:
-    name: 构建 iOS 未签名 IPA
     runs-on: macos-latest
 
     steps:
@@ -25,30 +24,37 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
-      # 🔥 关键步骤：自动修改 iOS 最低版本
-      - name: 强制修改 iOS Deployment Target
+      # 强制提升 iOS 版本
+      - name: 修改 iOS Deployment Target
         run: |
           sed -i '' "s/platform :ios, .*/platform :ios, '14.0'/" ios/Podfile || true
           echo "platform :ios, '14.0'" >> ios/Podfile
-          cat ios/Podfile
 
-      - name: 安装 CocoaPods
+      - name: 安装 Pods
         run: |
           cd ios
           pod deintegrate
-          rm -rf Podfile.lock Pods
+          rm -rf Pods Podfile.lock
           pod install --repo-update
 
-      - name: 构建 iOS (无签名)
-        run: flutter build ios --release --no-codesign
+      # 🔥 关键：使用 xcodebuild 手动关闭签名
+      - name: Xcode 构建（完全关闭签名）
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
 
       - name: 创建 IPA
         run: |
           mkdir -p build/ipa/Payload
-          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
-
-      - name: 生成 IPA
-        run: |
+          cp -R ios/build/Release-iphoneos/Runner.app build/ipa/Payload/
           cd build/ipa
           zip -r ../../Olib-Unsigned.ipa Payload
 
