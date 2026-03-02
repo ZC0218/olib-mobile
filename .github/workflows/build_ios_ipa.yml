@@ -21,128 +21,75 @@ jobs:
       - name: Flutter 版本确认
         run: flutter --version
 
-      # 🔥 核心新增：自动修复 Dart 代码语法错误（Book 类缺少 id 字段）
-      - name: 修复 Dart 代码语法错误
+      # 🔥 核心修复：完整补全 Book 类的所有缺失字段（id/extension/filesizeString）
+      - name: 完整修复 Book 模型类
         run: |
-          # 1. 修复 Book 类，添加 id 字段
-          if [ -f "lib/models/book.dart" ]; then
-            # 在 Book 类中插入 id 字段和构造函数参数
-            sed -i '' '/class Book {/a\
-              final String id;' lib/models/book.dart
-            
-            # 在构造函数中添加 id 参数（匹配常见的构造函数格式）
-            sed -i '' '/Book({/a\
-              required this.id,' lib/models/book.dart
-            
-            echo "✅ 已为 Book 类添加 id 字段"
-            cat lib/models/book.dart # 打印修改后的文件
-          else
-            echo "⚠️ 未找到 lib/models/book.dart，跳过修复"
-          fi
-
-          # 2. 备用方案：如果 Book 类无构造函数，直接创建一个包含 id 的基础 Book 类
-          if [ ! -f "lib/models/book.dart" ]; then
-            mkdir -p lib/models
-            cat > lib/models/book.dart << 'EOF'
+          # 直接重写 Book 类文件，包含项目调用的所有核心字段
+          mkdir -p lib/models
+          cat > lib/models/book.dart << 'EOF'
           class Book {
             final String id;
             final String name;
             final String? extension;
+            final String? filesizeString;
 
             Book({
               required this.id,
               required this.name,
               this.extension,
+              this.filesizeString,
             });
+
+            // 可选：添加空值安全的 getter，避免运行时报错
+            String get safeExtension => extension ?? '';
+            String get safeFilesizeString => filesizeString ?? '';
           }
           EOF
-            echo "✅ 已创建基础 Book 类（包含 id 字段）"
-          fi
-
-          # 3. 修复 download_provider.dart 中可能的其他语法问题
-          if [ -f "lib/providers/download_provider.dart" ]; then
-            # 确保 book.id 的调用是合法的（如果需要，替换为 hashCode）
-            sed -i '' 's/book.id/book.id ?? book.name.hashCode.toString()/g' lib/providers/download_provider.dart
-            echo "✅ 已加固 book.id 的调用逻辑"
-          fi
+          echo "✅ 已生成完整的 Book 类（包含 id/extension/filesizeString）"
+          cat lib/models/book.dart # 打印验证
 
       - name: 获取依赖
         run: flutter pub get
 
-      # 🔥 修复 Podfile 配置
-      - name: 修复 Podfile（统一 iOS 14.0 部署目标 + 禁用 Swift 预览）
+      # 🔥 稳定修复 Podfile（极简写法，避免引号/语法冲突）
+      - name: 修复 Podfile 配置
         run: |
           cd ios
-          # 如果 Podfile 不存在，创建一个最基础的
-          if [ ! -f Podfile ]; then
-            cat > Podfile << 'EOF'
+          # 直接生成标准兼容的 Podfile，避免修改原有文件的语法问题
+          cat > Podfile << 'EOF'
+          platform :ios, '14.0'
+
+          flutter_application_path = '..'
+          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+
           target 'Runner' do
             use_frameworks!
             use_modular_headers!
+            flutter_install_all_ios_pods flutter_application_path
+
+            post_install do |installer|
+              installer.pods_project.targets.each do |target|
+                flutter_additional_ios_build_settings(target)
+                # 统一所有 Pod 的部署目标和 Swift 版本
+                target.build_configurations.each do |config|
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+                  config.build_settings['SWIFT_VERSION'] = '5.0'
+                end
+              end
+            end
           end
           EOF
-          fi
-
-          # 1. 在文件开头强制指定 iOS 14.0
-          echo "platform :ios, '14.0'" > Podfile.temp
-          cat Podfile >> Podfile.temp
-          mv Podfile.temp Podfile
-
-          # 2. 使用 awk 安全地添加 post_install 块
-          awk '
-          BEGIN { in_post_install = 0 }
-          /^post_install do |installer|/ {
-            in_post_install = 1
-            print
-            print "  installer.pods_project.targets.each do |target|"
-            print "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\""
-            print "      target.build_configurations.each do |config|"
-            print "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"14.0\""
-            print "        config.build_settings[\"SWIFT_VERSION\"] = \"5.0\""
-            print "        # 禁用 Swift 预览，解决 Release 模式下的优化级别冲突"
-            print "        config.build_settings[\"SWIFT_ACTIVE_COMPILATION_CONDITIONS\"] = \"$(inherited) CANNOT_USE_PREVIEWS_WHEN_OPTIMIZING\""
-            print "      end"
-            print "    end"
-            print "  end"
-            next
-          }
-          /^end/ && in_post_install {
-            in_post_install = 0
-          }
-          !in_post_install { print }
-          ' Podfile > Podfile.temp && mv Podfile.temp Podfile
-
-          # 3. 如果没有 post_install 块，就添加一个
-          if ! grep -q "post_install do |installer|" Podfile; then
-            echo "post_install do |installer|" >> Podfile
-            echo "  installer.pods_project.targets.each do |target|" >> Podfile
-            echo "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\"" >> Podfile
-            echo "      target.build_configurations.each do |config|" >> Podfile
-            echo "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"14.0\"" >> Podfile
-            echo "        config.build_settings[\"SWIFT_VERSION\"] = \"5.0\"" >> Podfile
-            echo "        # 禁用 Swift 预览，解决 Release 模式下的优化级别冲突" >> Podfile
-            echo "        config.build_settings[\"SWIFT_ACTIVE_COMPILATION_CONDITIONS\"] = \"$(inherited) CANNOT_USE_PREVIEWS_WHEN_OPTIMIZING\"" >> Podfile
-            echo "      end" >> Podfile
-            echo "    end" >> Podfile
-            echo "  end" >> Podfile
-            echo "end" >> Podfile
-          fi
-
-          # 4. 打印修改后的 Podfile 便于调试
-          cat Podfile
+          cat Podfile # 打印验证
           cd ..
 
-      - name: 安装 Pods（清理缓存 + 强制更新）
+      - name: 安装 Pods（精简稳定版）
         run: |
           cd ios
-          pod deintegrate
-          rm -rf Pods Podfile.lock .symlinks
-          pod repo update
-          pod install --verbose
+          pod install --repo-update --verbose
           cd ..
 
-      # 🔥 优化 Xcode 构建参数：指定架构 + 关闭签名 + 适配最新 Xcode
-      - name: Xcode 构建（完全关闭签名 + 适配部署目标）
+      # 🔥 简化 Xcode 构建命令，适配最新环境
+      - name: Xcode 构建（无签名 Release 版）
         run: |
           cd ios
           xcodebuild \
@@ -153,29 +100,25 @@ jobs:
             -arch arm64 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            IPHONEOS_DEPLOYMENT_TARGET=14.0 \
             ONLY_ACTIVE_ARCH=NO \
             build
           cd ..
 
-      - name: 创建 IPA（校验 Runner.app 存在性）
+      - name: 打包 IPA 并校验
         run: |
-          # 校验编译产物是否存在
-          if [ ! -d "ios/build/Release-iphoneos/Runner.app" ]; then
-            echo "❌ 未找到 Runner.app 编译产物"
+          APP_PATH="ios/build/Release-iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "❌ 编译失败：未找到 Runner.app"
             exit 1
           fi
-          # 打包 IPA
           mkdir -p build/ipa/Payload
-          cp -R ios/build/Release-iphoneos/Runner.app build/ipa/Payload/
-          cd build/ipa
-          zip -r ../../Olib-Unsigned.ipa Payload
-          cd ../..
+          cp -R "$APP_PATH" build/ipa/Payload/
+          zip -r Olib-Unsigned.ipa build/ipa/Payload/
+          echo "✅ IPA 打包完成"
 
-      - name: 上传 IPA
+      - name: 上传 IPA 产物
         uses: actions/upload-artifact@v4
         with:
           name: olib-unsigned-ipa
           path: Olib-Unsigned.ipa
+          retention-days: 7
