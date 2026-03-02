@@ -1,4 +1,4 @@
-name: Build Unsigned IPA (Internal Patch)
+name: Build Unsigned App (Total Decoupling)
 
 on:
   workflow_dispatch:
@@ -18,52 +18,58 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Patch iOS Build Environment
+      - name: Surgical Project Modification
         run: |
           flutter pub get
           cd ios
-          # 1. 强制生成官方原装 Podfile
+          # 1. 深度清理：彻底抹除项目文件中所有的 Team ID 和 签名证书要求
+          # 这一行会查找所有 pbxproj 文件并把 DEVELOPMENT_TEAM 这一行彻底删掉
+          find . -name "*.pbxproj" -exec sed -i '' '/DEVELOPMENT_TEAM/d' {} +
+          find . -name "*.pbxproj" -exec sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' {} +
+          find . -name "*.pbxproj" -exec sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' {} +
+          
+          # 2. 构造一个绝对纯净、不带任何冲突可能的 Podfile
           rm -f Podfile Podfile.lock
           flutter build ios --no-codesign --release --no-tree-shake-icons || true
           
-          # 2. 直接在原装 Podfile 的第一行强制指定 iOS 13
-          sed -i '' "1s/.*/platform :ios, '13.0'/" Podfile
+          # 强制指定 iOS 13 平台
+          sed -i '' "s/platform :ios, .*/platform :ios, '13.0'/g" Podfile
           
-          # 3. 在原装的 post_install 块中通过查找替换注入代码
-          # 我们把禁用签名的代码直接塞进 flutter_additional_ios_build_settings(target) 后面
-          sed -i '' '/flutter_additional_ios_build_settings(target)/a \
-                target.build_configurations.each do |config| \
-                  config.build_settings["CODE_SIGNING_ALLOWED"] = "NO" \
-                  config.build_settings["CODE_SIGNING_REQUIRED"] = "NO" \
-                  config.build_settings["CODE_SIGN_IDENTITY"] = "" \
-                  config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0" \
-                end' Podfile
-
-          # 4. 执行安装
+          # 3. 注入极简的 post_install，只保留核心逻辑，确保不报 "multiple hooks"
+          # 我们先用 sed 删掉 Flutter 默认生成的 post_install 到 end 的内容，然后自己重写
+          sed -i '' '/post_install do |installer|/,$d' Podfile
+          cat <<EOF >> Podfile
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                config.build_settings['CODE_SIGN_IDENTITY'] = ''
+                config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+              end
+            end
+          end
+          EOF
           pod install --repo-update
 
-      - name: Hard Disable Xcode Signing
+      - name: Final Execution with Environment Lockdown
         run: |
-          # 注入最高优先级环境配置
-          mkdir -p ios/Flutter
-          {
-            echo "CODE_SIGNING_ALLOWED=NO"
-            echo "CODE_SIGNING_REQUIRED=NO"
-            echo "CODE_SIGN_IDENTITY="
-            echo "IPHONEOS_DEPLOYMENT_TARGET=13.0"
-          } >> ios/Flutter/Generated.xcconfig
-
-      - name: Build Unsigned App Bundle
-        run: |
-          # 再次执行编译，此时 Podfile 已就绪且无冲突
+          # 通过显式定义环境变量，锁定 Xcode 构建过程
+          export CODE_SIGNING_ALLOWED=NO
+          export CODE_SIGNING_REQUIRED=NO
+          export CODE_SIGN_IDENTITY=""
+          export PROVISIONING_PROFILE_SPECIFIER=""
+          
           flutter build ios --release --no-codesign --no-tree-shake-icons
 
-      - name: Package for TrollStore (IPA)
+      - name: Package for TrollStore
         run: |
           mkdir -p Payload
           APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Build failed: Runner.app not found!"
+            echo "Error: Runner.app not found!"
             exit 1
           fi
           cp -r "$APP_PATH" Payload/
