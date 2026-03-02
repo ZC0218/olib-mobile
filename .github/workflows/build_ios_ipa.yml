@@ -1,4 +1,4 @@
-name: Build Unsigned App (Final Bypass)
+name: Build Unsigned App (Clean Reconstruction)
 
 on:
   workflow_dispatch:
@@ -18,28 +18,51 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Reset and Clean Environment
+      - name: Force Reconstruction of iOS Project
         run: |
-          # 彻底清理之前的残留，防止 "Failed to build bundle"
-          flutter clean
-          rm -rf ios/Pods
-          rm -f ios/Podfile ios/Podfile.lock
-          flutter pub get
+          # 1. 彻底删除可能存在冲突的旧配置
+          rm -rf ios/Runner.xcodeproj
+          rm -rf ios/Runner.xcworkspace
+          rm -f ios/Podfile
+          
+          # 2. 让 Flutter 重新生成标准的 iOS 目录结构
+          # 这一步会根据你的 pubspec.yaml 创建一份纯净的、默认不带复杂签名的原生工程
+          flutter create . --platforms=ios
+          
+          # 3. 强制升级 Podfile 平台版本，解决 url_launcher 等插件报错
+          cd ios
+          echo "platform :ios, '13.0'" > Podfile.new
+          cat Podfile >> Podfile.new
+          mv Podfile.new Podfile
+          
+          # 4. 注入禁用签名的万能补丁 (Single Hook 模式，避免冲突)
+          cat <<EOF >> Podfile
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                config.build_settings['CODE_SIGN_IDENTITY'] = ''
+              end
+            end
+          end
+          EOF
+          pod install --repo-update
 
-      - name: Build Unsigned Debug App (No-Sign Passage)
+      - name: Build Unsigned Release
         run: |
-          # 使用 --debug 模式，这是唯一 100% 绕过签名校验的官方路径
-          # TrollStore 用户其实并不在乎是 Debug 还是 Release，能跑最重要
-          flutter build ios --debug --no-codesign --no-tree-shake-icons
+          # 现在在纯净环境下尝试 Release 编译
+          flutter build ios --release --no-codesign --no-tree-shake-icons
 
-      - name: Package for TrollStore
+      - name: Create Unsigned IPA
         run: |
           mkdir -p Payload
-          # 定位生成的 Debug 版本的 Runner.app
           APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-             echo "Debug Build failed to produce Runner.app"
-             exit 1
+            echo "Build failed: Runner.app not found"
+            exit 1
           fi
           cp -r "$APP_PATH" Payload/
           zip -r olib-mobile-unsigned.ipa Payload
