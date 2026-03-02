@@ -1,112 +1,156 @@
-name: Build olib-mobile iOS IPA
+name: Cloud Build olib-mobile iOS IPA (Simulator)
 on:
-  workflow_dispatch: # 手动触发编译
+  workflow_dispatch: # 仅手动触发，避免自动编译
 
 jobs:
-  build-ios:
-    runs-on: macos-latest # 必须用macOS环境
+  build-ipa:
+    runs-on: macos-latest
     steps:
-      # 1. 检出仓库代码
-      - name: Checkout olib-mobile Code
+      # ===================== 第一步：准备基础环境 =====================
+      - name: Checkout olib-mobile Source
         uses: actions/checkout@v4
         with:
           repository: ZC0218/olib-mobile
           ref: main
-          fetch-depth: 0
+          path: olib-mobile
 
-      # 2. 配置兼容arm64的Node环境（替换为14.21.0，适配macOS arm64）
-      - name: Setup Node.js 14.x (Compatible with arm64)
+      - name: Setup Xcode (指定版本避免兼容性问题)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.0'
+
+      - name: Setup Node.js (升级到16.x，原生支持arm64)
         uses: actions/setup-node@v4
         with:
-          node-version: '14.21.0' # 替换为arm64兼容的14.x版本
+          node-version: '16.x' # 关键修改：从14.x升级到16.x
           cache: 'npm'
+          cache-dependency-path: olib-mobile/package-lock.json
 
-      # 3. 安装前端项目依赖
-      - name: Install Frontend Dependencies
+      # ===================== 第二步：打包H5静态资源 =====================
+      - name: Install H5 Dependencies
         run: |
-          npm install --registry=https://registry.npmmirror.com
-          if [ ! -d "node_modules" ]; then
-            echo "❌ 依赖安装失败，重新安装"
-            npm install --force --registry=https://registry.npmmirror.com
-          fi
-
-      # 4. 构建前端静态资源
-      - name: Build Frontend Static Files
-        run: |
+          cd olib-mobile
+          # 强制修复原仓库依赖冲突
+          npm install --force --registry=https://registry.npmmirror.com
+          # 生成适配iOS WebView的H5资源
           npm run build
+          # 校验打包结果
           if [ ! -d "dist" ]; then
-            echo "❌ 前端打包失败，无dist目录"
+            echo "❌ H5打包失败，无dist目录"
             exit 1
           fi
 
-      # 5. 安装Flutter（用于桥接前端资源到iOS）
-      - name: Setup Flutter 3.19.0
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.38.5'
-          channel: 'stable'
-          cache: true
-
-      # 6. 初始化Flutter项目（嵌入前端静态资源）
-      - name: Init Flutter Project for iOS
+      # ===================== 第三步：创建iOS原生壳工程 =====================
+      - name: Create iOS Shell Project (WKWebView)
         run: |
-          if [ ! -d "flutter_ios" ]; then
-            flutter create flutter_ios
-          fi
-          cd flutter_ios
-          flutter pub get
-          rm -rf assets
-          mkdir -p assets
-          cp -r ../dist/* assets/
-          sed -i '' '/flutter:/a\
-            assets:\n    - assets/' pubspec.yaml
-          cd ..
+          # 创建Xcode工程
+          xcodebuild -create-project \
+            -project OlibMobile.xcodeproj \
+            -target OlibMobile \
+            -language Objective-C \
+            -platform iOS
 
-      # 7. 修复iOS Podfile（统一部署目标为13.0）
-      - name: Fix iOS Podfile
-        run: |
-          cd flutter_ios/ios
-          flutter podfile
-          echo "platform :ios, '13.0'" > Podfile.temp
-          cat Podfile >> Podfile.temp
-          mv Podfile.temp Podfile
-          sed -i '' '$a\
-          post_install do |installer|\
-            installer.pods_project.targets.each do |target|\
-              flutter_additional_ios_build_settings(target)\
-              target.build_configurations.each do |config|\
-                config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0"\
-              end\
-            end\
-          end' Podfile
-          pod deintegrate
-          pod install --repo-update
-          cd ../..
+          # 创建核心代码文件
+          mkdir -p OlibMobile
+          
+          # 1. ViewController.h
+          cat > OlibMobile/ViewController.h << 'EOF'
+          #import <UIKit/UIKit.h>
+          #import <WebKit/WebKit.h>
+          @interface ViewController : UIViewController<WKNavigationDelegate>
+          @property (nonatomic, strong) WKWebView *webView;
+          @end
+          EOF
 
-      # 8. 编译Flutter iOS模拟器版Debug包
-      - name: Build Flutter iOS Debug (Simulator)
-        run: |
-          cd flutter_ios
-          flutter build ios --debug --no-codesign --simulator
-          cd ..
+          # 2. ViewController.m (加载本地H5资源)
+          cat > OlibMobile/ViewController.m << 'EOF'
+          #import "ViewController.h"
+          @implementation ViewController
+          - (void)viewDidLoad {
+              [super viewDidLoad];
+              // 配置WebView
+              WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+              self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds configuration:config];
+              self.webView.navigationDelegate = self;
+              [self.view addSubview:self.webView];
+              
+              // 加载H5资源（从bundle读取）
+              NSURL *htmlURL = [[NSBundle mainBundle] URLForResource:@"dist/index" withExtension:@"html"];
+              [self.webView loadRequest:[NSURLRequest requestWithURL:htmlURL]];
+              
+              // 适配全屏
+              self.webView.scrollView.bounces = NO;
+              self.navigationController.navigationBarHidden = YES;
+          }
+          - (void)viewWillLayoutSubviews {
+              [super viewWillLayoutSubviews];
+              self.webView.frame = self.view.bounds;
+          }
+          @end
+          EOF
 
-      # 9. 打包成IPA文件
-      - name: Package to IPA
+          # 3. AppDelegate.m
+          cat > OlibMobile/AppDelegate.m << 'EOF'
+          #import "AppDelegate.h"
+          #import "ViewController.h"
+          @implementation AppDelegate
+          - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+              self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+              ViewController *vc = [[ViewController alloc] init];
+              self.window.rootViewController = [[UINavigationController alloc] initWithRootViewController:vc];
+              [self.window makeKeyAndVisible];
+              return YES;
+          }
+          @end
+          EOF
+
+          # 4. AppDelegate.h
+          cat > OlibMobile/AppDelegate.h << 'EOF'
+          #import <UIKit/UIKit.h>
+          @interface AppDelegate : UIResponder <UIApplicationDelegate>
+          @property (strong, nonatomic) UIWindow *window;
+          @end
+          EOF
+
+          # 复制H5资源到iOS工程（作为bundle资源）
+          cp -r olib-mobile/dist .
+          # 添加H5资源到Xcode工程（修改pbxproj配置）
+          xcodeproj=$(find . -name "*.xcodeproj" -type d)
+          perl -pi -e 's/(PBXResourcesBuildPhase.*?)(\n\s+end)/$1\n\t\t\t-dist\/\n$2/s' "$xcodeproj/project.pbxproj"
+
+      # ===================== 第四步：编译iOS工程为IPA（模拟器版，免证书） =====================
+      - name: Build iOS Project (Simulator, No Code Sign)
         run: |
+          # 设置编译参数（模拟器架构，免签名）
+          xcodebuild \
+            -project OlibMobile.xcodeproj \
+            -scheme OlibMobile \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.0' \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=13.0
+
+          # 打包为IPA（标准结构）
           mkdir -p Payload
-          if [ -d "flutter_ios/build/ios/iphonesimulator/Runner.app" ]; then
-            cp -r flutter_ios/build/ios/iphonesimulator/Runner.app Payload/
-          else
-            echo "❌ 未找到Runner.app，编译失败"
-            exit 1
-          fi
+          cp -r build/Debug-iphonesimulator/OlibMobile.app Payload/
           zip -r olib-mobile-ios-simulator.ipa Payload/
           rm -rf Payload
 
-      # 10. 上传IPA产物
+      # ===================== 第五步：上传IPA产物（可直接下载） =====================
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: olib-mobile-ipa
+          name: olib-mobile-ipa-simulator
           path: olib-mobile-ios-simulator.ipa
-          retention-days: 30
+          retention-days: 7 # 产物保留7天
+
+      # ===================== 错误兜底：输出编译日志 =====================
+      - name: Upload Build Logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-build-logs
+          path: ~/Library/Developer/Xcode/DerivedData/
