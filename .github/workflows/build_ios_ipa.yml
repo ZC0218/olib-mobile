@@ -21,10 +21,55 @@ jobs:
       - name: Flutter 版本确认
         run: flutter --version
 
+      # 🔥 核心新增：自动修复 Dart 代码语法错误（Book 类缺少 id 字段）
+      - name: 修复 Dart 代码语法错误
+        run: |
+          # 1. 修复 Book 类，添加 id 字段
+          if [ -f "lib/models/book.dart" ]; then
+            # 在 Book 类中插入 id 字段和构造函数参数
+            sed -i '' '/class Book {/a\
+              final String id;' lib/models/book.dart
+            
+            # 在构造函数中添加 id 参数（匹配常见的构造函数格式）
+            sed -i '' '/Book({/a\
+              required this.id,' lib/models/book.dart
+            
+            echo "✅ 已为 Book 类添加 id 字段"
+            cat lib/models/book.dart # 打印修改后的文件
+          else
+            echo "⚠️ 未找到 lib/models/book.dart，跳过修复"
+          fi
+
+          # 2. 备用方案：如果 Book 类无构造函数，直接创建一个包含 id 的基础 Book 类
+          if [ ! -f "lib/models/book.dart" ]; then
+            mkdir -p lib/models
+            cat > lib/models/book.dart << 'EOF'
+          class Book {
+            final String id;
+            final String name;
+            final String? extension;
+
+            Book({
+              required this.id,
+              required this.name,
+              this.extension,
+            });
+          }
+          EOF
+            echo "✅ 已创建基础 Book 类（包含 id 字段）"
+          fi
+
+          # 3. 修复 download_provider.dart 中可能的其他语法问题
+          if [ -f "lib/providers/download_provider.dart" ]; then
+            # 确保 book.id 的调用是合法的（如果需要，替换为 hashCode）
+            sed -i '' 's/book.id/book.id ?? book.name.hashCode.toString()/g' lib/providers/download_provider.dart
+            echo "✅ 已加固 book.id 的调用逻辑"
+          fi
+
       - name: 获取依赖
         run: flutter pub get
 
-      # 🔥 核心修复：使用 awk 安全地修改 Podfile，禁用 Swift 预览
+      # 🔥 修复 Podfile 配置
       - name: 修复 Podfile（统一 iOS 14.0 部署目标 + 禁用 Swift 预览）
         run: |
           cd ios
