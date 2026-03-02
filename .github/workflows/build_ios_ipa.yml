@@ -57,40 +57,14 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
-      # 🔥 极简 Podfile：不做任何修改，使用项目自带的配置
-      - name: 生成标准 Podfile
+      # 🔥 关键：使用 Flutter 官方命令，自动处理 Pods 并构建
+      - name: Flutter 构建 iOS（Debug 模拟器版，绕过所有限制）
         run: |
-          cd ios
-          flutter pub get
-          cat Podfile # 打印验证
-          cd ..
-
-      - name: 安装 Pods（精简稳定版）
-        run: |
-          cd ios
-          pod install --repo-update --verbose
-          cd ..
-
-      # 🔥 关键：使用 Debug 模式 + 显式覆盖部署目标，绕过所有 Pod 版本限制
-      - name: Xcode 构建（无签名 Debug 版，绕过部署目标限制）
-        run: |
-          cd ios
-          xcodebuild \
-            -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -arch x86_64 \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            IPHONEOS_DEPLOYMENT_TARGET=12.0 \
-            ONLY_ACTIVE_ARCH=NO \
-            build
-          cd ..
+          flutter build ios --debug --no-codesign --simulator --verbose
 
       - name: 打包 IPA 并校验
         run: |
-          APP_PATH="ios/build/Debug-iphonesimulator/Runner.app"
+          APP_PATH="build/ios/iphonesimulator/Debug-iphonesimulator/Runner.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "❌ 编译失败：未找到 Runner.app"
             exit 1
