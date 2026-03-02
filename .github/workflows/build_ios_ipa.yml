@@ -23,48 +23,49 @@ jobs:
           flutter pub get
           cd ios
           
-          # 1. 彻底解决版本问题：强行在 Podfile 最开头插入 iOS 13 声明
+          # 1. 强制在 Podfile 顶端插入 iOS 13 声明，确保解决 url_launcher 兼容性
           echo "platform :ios, '13.0'" > Podfile.tmp
           cat Podfile >> Podfile.tmp
           mv Podfile.tmp Podfile
           
-          # 2. 移除可能导致冲突的旧版本声明
-          sed -i '' "s/platform :ios, '12.0'//g" Podfile
-          sed -i '' "s/platform :ios, '11.0'//g" Podfile
+          # 2. 注入禁用签名逻辑
+          # 使用更简单的匹配方式，确保每个 target 都关闭签名
+          cat <<EOF >> Podfile
 
-          # 3. 注入禁用签名逻辑
-          # 寻找 Flutter 默认的设置行，并在其后插入我们的强制参数
-          sed -i '' '/flutter_additional_ios_build_settings(target)/a \
-                target.build_configurations.each do |config| \
-                  config.build_settings["CODE_SIGNING_ALLOWED"] = "NO" \
-                  config.build_settings["CODE_SIGNING_REQUIRED"] = "NO" \
-                  config.build_settings["CODE_SIGN_IDENTITY"] = "" \
-                  config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0" \
-                end' Podfile
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              target.build_configurations.each do |config|
+                config.build_settings["CODE_SIGNING_ALLOWED"] = "NO"
+                config.build_settings["CODE_SIGNING_REQUIRED"] = "NO"
+                config.build_settings["CODE_SIGN_IDENTITY"] = ""
+                config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0"
+              end
+            end
+          end
+          EOF
           
           pod install --repo-update
 
-      - name: Global Xcode Cleanup
+      - name: Global Xcode Signing Override
         run: |
-          # 抹除项目文件中的所有签名和 Team 设置
-          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER =/ //g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM =/ //g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
-          
-          # 强行注入环境变量
+          # 修复之前的 sed 语法错误，改用直接注入环境变量的方式
+          # 这种方式比修改项目文件更稳定，Xcode 编译时会优先读取这些配置
           echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
+          echo "EXPANDED_CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
+          echo "COMPILER_INDEX_STORE_ENABLE=NO" >> ios/Flutter/Generated.xcconfig
 
       - name: Build iOS Release
         run: |
-          # 增加 --verbose 模式以便在失败时看到最底层的 Xcode 报错
-          flutter build ios --release --no-codesign --no-tree-shake-icons --verbose
+          # 使用强制参数跳过所有签名检查
+          flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Create Unsigned IPA
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
+          # 动态查找编译出的 .app 文件夹
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
             echo "Error: Runner.app not found!"
             exit 1
