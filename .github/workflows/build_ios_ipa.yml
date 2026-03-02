@@ -24,41 +24,43 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
-      # 🔥 核心修复：先生成标准Podfile，再修改它
-      - name: 生成并修复 Podfile
+      # 🔥 核心修复：直接修改现有的 Podfile，不依赖任何外部命令
+      - name: 修复 Podfile（统一 iOS 14.0 部署目标 + Swift 配置）
         run: |
           cd ios
-          # 1. 让 Flutter 生成一个包含正确路径的标准 Podfile
-          flutter podfile
-          # 2. 在文件开头强制指定 iOS 14.0
+          # 如果 Podfile 不存在，创建一个最基础的
+          if [ ! -f Podfile ]; then
+            cat > Podfile << 'EOF'
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+          end
+          EOF
+          fi
+
+          # 1. 在文件开头强制指定 iOS 14.0
           echo "platform :ios, '14.0'" > Podfile.temp
           cat Podfile >> Podfile.temp
           mv Podfile.temp Podfile
+
+          # 2. 检查是否有 post_install 块，如果没有就添加一个
+          if ! grep -q "post_install do |installer|" Podfile; then
+            echo "post_install do |installer|" >> Podfile
+            echo "end" >> Podfile
+          fi
+
           # 3. 在 post_install 块中插入代码，强制统一所有 Pod 的部署目标
-          if grep -q "post_install do |installer|" Podfile; then
-            # 如果已有 post_install 块，在里面插入代码
-            sed -i '' '/post_install do |installer|/a\
-              installer.pods_project.targets.each do |target|\
-                flutter_additional_ios_build_settings(target)\
+          sed -i '' '/post_install do |installer|/a\
+            installer.pods_project.targets.each do |target|\
+              if target.respond_to?(:product_type) and target.product_type == "com.apple.product-type.framework"\
                 target.build_configurations.each do |config|\
                   config.build_settings['\''IPHONEOS_DEPLOYMENT_TARGET'\''] = '\''14.0'\'','\
                   config.build_settings['\''SWIFT_OPTIMIZATION_LEVEL'\''] = '\''-O'\'','\
                   config.build_settings['\''SWIFT_VERSION'\''] = '\''5.0'\'','\
                 end\
-              end' Podfile
-          else
-            # 如果没有 post_install 块，在文件末尾添加一个
-            echo "post_install do |installer|" >> Podfile
-            echo "  installer.pods_project.targets.each do |target|" >> Podfile
-            echo "    flutter_additional_ios_build_settings(target)" >> Podfile
-            echo "    target.build_configurations.each do |config|" >> Podfile
-            echo "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'" >> Podfile
-            echo "      config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-O'" >> Podfile
-            echo "      config.build_settings['SWIFT_VERSION'] = '5.0'" >> Podfile
-            echo "    end" >> Podfile
-            echo "  end" >> Podfile
-            echo "end" >> Podfile
-          fi
+              end\
+            end' Podfile
+
           # 4. 打印修改后的 Podfile 便于调试
           cat Podfile
           cd ..
