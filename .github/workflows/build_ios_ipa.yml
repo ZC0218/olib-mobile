@@ -83,6 +83,8 @@ jobs:
             print "      config.build_settings[\"SWIFT_VERSION\"] = \"5.0\""
             print "      # 禁用 Swift 预览，解决 Release 模式下的优化级别冲突"
             print "      config.build_settings[\"SWIFT_ACTIVE_COMPILATION_CONDITIONS\"] = \"$(inherited) CANNOT_USE_PREVIEWS_WHEN_OPTIMIZING\""
+            print "      # 移除 SWIFT_OPTIMIZATION_LEVEL 冲突"
+            print "      config.build_settings[\"SWIFT_OPTIMIZATION_LEVEL\"] = \"-Onone\""
             print "    end"
             print "  end"
             next
@@ -103,6 +105,8 @@ jobs:
             echo "      config.build_settings[\"SWIFT_VERSION\"] = \"5.0\""
             echo "      # 禁用 Swift 预览，解决 Release 模式下的优化级别冲突"
             echo "      config.build_settings[\"SWIFT_ACTIVE_COMPILATION_CONDITIONS\"] = \"$(inherited) CANNOT_USE_PREVIEWS_WHEN_OPTIMIZING\""
+            echo "      # 移除 SWIFT_OPTIMIZATION_LEVEL 冲突"
+            echo "      config.build_settings[\"SWIFT_OPTIMIZATION_LEVEL\"] = \"-Onone\""
             echo "    end"
             echo "  end" >> Podfile
             echo "end" >> Podfile
