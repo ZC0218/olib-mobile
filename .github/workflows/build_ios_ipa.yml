@@ -14,10 +14,9 @@ jobs:
           ref: main
           path: olib-mobile
 
-      - name: Setup Xcode (指定版本避免兼容性问题)
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '15.0'
+      # 移除了 Setup Xcode 步骤，直接使用环境默认的最新版 Xcode
+      - name: Use default Xcode version
+        run: xcodebuild -version # 打印当前 Xcode 版本，用于调试
 
       - name: Setup Node.js (升级到16.x，原生支持arm64)
         uses: actions/setup-node@v4
