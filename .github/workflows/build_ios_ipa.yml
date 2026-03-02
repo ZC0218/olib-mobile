@@ -1,4 +1,4 @@
-name: Build Unsigned IPA (Simulator Bypass)
+name: Build Unsigned IPA (Hardcore Export)
 
 on:
   workflow_dispatch:
@@ -18,45 +18,31 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Prepare Project
+      - name: Install Dependencies
         run: |
           flutter pub get
-          cd ios
-          # 1. 强行生成 Podfile
-          rm -f Podfile Podfile.lock
-          flutter build ios --simulator --no-codesign || true
-          
-          # 2. 强制 Podfile 支持 iOS 13
-          sed -i '' "s/platform :ios, .*/platform :ios, '13.0'/g" Podfile
-          
-          # 3. 注入禁用签名（保险起见）
-          cat <<EOF >> Podfile
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
-              flutter_additional_ios_build_settings(target)
-              target.build_configurations.each do |config|
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-              end
-            end
-          end
-          EOF
-          pod install --repo-update
+          # 仅仅执行最基础的 pod 安装，不做任何自定义修改，避免触发插件冲突
+          cd ios && pod install --repo-update
 
-      - name: Build Simulator Release App
+      - name: Build Unsigned App Bundle
         run: |
-          # 核心技巧：构建模拟器 release 版本，彻底绕过真机签名校验
-          # 我们强行指定架构为 arm64，确保 TrollStore 能够处理
-          flutter build ios --release --simulator --no-codesign --no-tree-shake-icons
+          # 核心改动：使用 --no-codesign 配合环境变量注入
+          # 强制跳过 Xcode 的 Provisioning Profile 检查阶段
+          export CODE_SIGNING_ALLOWED=NO
+          export CODE_SIGNING_REQUIRED=NO
+          export CODE_SIGN_IDENTITY=""
+          
+          flutter build ios --release --no-codesign --no-tree-shake-icons \
+            --split-debug-info=build/app/outputs/symbols
 
-      - name: Packaging as IPA
+      - name: Package for TrollStore (IPA)
         run: |
+          # 手动将生成的 .app 封装成 TrollStore 可用的 IPA
           mkdir -p Payload
-          # 寻找模拟器路径下的 .app 文件夹
-          APP_PATH=$(find build/ios/iphonesimulator -name "Runner.app" | head -n 1)
+          # 动态定位生成的 Runner.app
+          APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Error: Build output not found!"
+            echo "Build failed: Runner.app not found!"
             exit 1
           fi
           cp -r "$APP_PATH" Payload/
