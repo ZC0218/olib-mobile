@@ -24,8 +24,8 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
-      # 🔥 核心修复：使用 awk 安全地修改 Podfile，避免引号冲突
-      - name: 修复 Podfile（统一 iOS 14.0 部署目标 + Swift 配置）
+      # 🔥 核心修复：使用 awk 安全地修改 Podfile，禁用 Swift 预览
+      - name: 修复 Podfile（统一 iOS 14.0 部署目标 + 禁用 Swift 预览）
         run: |
           cd ios
           # 如果 Podfile 不存在，创建一个最基础的
@@ -53,8 +53,9 @@ jobs:
             print "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\""
             print "      target.build_configurations.each do |config|"
             print "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"14.0\""
-            print "        config.build_settings[\"SWIFT_OPTIMIZATION_LEVEL\"] = \"-O\""
             print "        config.build_settings[\"SWIFT_VERSION\"] = \"5.0\""
+            print "        # 禁用 Swift 预览，解决 Release 模式下的优化级别冲突"
+            print "        config.build_settings[\"SWIFT_ACTIVE_COMPILATION_CONDITIONS\"] = \"$(inherited) CANNOT_USE_PREVIEWS_WHEN_OPTIMIZING\""
             print "      end"
             print "    end"
             print "  end"
@@ -73,8 +74,9 @@ jobs:
             echo "    if target.respond_to?(:product_type) && target.product_type == \"com.apple.product-type.framework\"" >> Podfile
             echo "      target.build_configurations.each do |config|" >> Podfile
             echo "        config.build_settings[\"IPHONEOS_DEPLOYMENT_TARGET\"] = \"14.0\"" >> Podfile
-            echo "        config.build_settings[\"SWIFT_OPTIMIZATION_LEVEL\"] = \"-O\"" >> Podfile
             echo "        config.build_settings[\"SWIFT_VERSION\"] = \"5.0\"" >> Podfile
+            echo "        # 禁用 Swift 预览，解决 Release 模式下的优化级别冲突" >> Podfile
+            echo "        config.build_settings[\"SWIFT_ACTIVE_COMPILATION_CONDITIONS\"] = \"$(inherited) CANNOT_USE_PREVIEWS_WHEN_OPTIMIZING\"" >> Podfile
             echo "      end" >> Podfile
             echo "    end" >> Podfile
             echo "  end" >> Podfile
