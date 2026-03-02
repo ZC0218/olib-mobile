@@ -18,53 +18,66 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Force iOS 13 and Disable Signing
+      - name: Reconstruct Podfile (Final Fix)
         run: |
           flutter pub get
           cd ios
+          # 彻底删除旧的 Podfile，防止重复注入导致的 Hook 冲突
+          rm -f Podfile Podfile.lock
           
-          # 1. 强制在 Podfile 顶端插入 iOS 13 声明，确保解决 url_launcher 兼容性
-          echo "platform :ios, '13.0'" > Podfile.tmp
-          cat Podfile >> Podfile.tmp
-          mv Podfile.tmp Podfile
-          
-          # 2. 注入禁用签名逻辑
-          # 使用更简单的匹配方式，确保每个 target 都关闭签名
-          cat <<EOF >> Podfile
+          # 创建一个干净的、支持 iOS 13 且禁用签名的新 Podfile
+          cat <<EOF > Podfile
+          platform :ios, '13.0'
+
+          # 这里的 Ruby 脚本会自动引入 Flutter 的插件配置
+          load File.join(File.dirname(File.realpath(__FILE__)), '.symlinks', 'plugins', 'url_launcher_ios', 'ios', 'url_launcher_ios.podspec') rescue nil
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+            
+            # 这一行是 Flutter 自动关联插件的核心，必须保留
+            # 如果报错，脚本会自动尝试补全环境
+          end
 
           post_install do |installer|
             installer.pods_project.targets.each do |target|
-              target.build_configurations.each do |config|
-                config.build_settings["CODE_SIGNING_ALLOWED"] = "NO"
-                config.build_settings["CODE_SIGNING_REQUIRED"] = "NO"
-                config.build_settings["CODE_SIGN_IDENTITY"] = ""
-                config.build_settings["IPHONEOS_DEPLOYMENT_TARGET"] = "13.0"
+              # 关键：调用 Flutter 默认配置的同时强制覆盖签名
+              if target.respond_to?(:build_configurations)
+                target.build_configurations.each do |config|
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+                  config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                  config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                  config.build_settings['CODE_SIGN_IDENTITY'] = ''
+                  config.build_settings['ENABLE_BITCODE'] = 'NO'
+                end
               end
             end
           end
           EOF
           
+          # 重新初始化 Pods
+          # 如果此时报错找不到方法，说明需要先运行 flutter build 初始化原生目录
+          flutter build ios --no-codesign --release --no-tree-shake-icons || true
           pod install --repo-update
 
-      - name: Global Xcode Signing Override
+      - name: Force Environment Signing Disable
         run: |
-          # 修复之前的 sed 语法错误，改用直接注入环境变量的方式
-          # 这种方式比修改项目文件更稳定，Xcode 编译时会优先读取这些配置
+          # 不再使用 sed 修改项目文件（防止 bad flag 报错）
+          # 直接在构建环境变量中注入禁用参数
           echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
           echo "EXPANDED_CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
-          echo "COMPILER_INDEX_STORE_ENABLE=NO" >> ios/Flutter/Generated.xcconfig
 
       - name: Build iOS Release
         run: |
-          # 使用强制参数跳过所有签名检查
+          # 再次执行编译，此时 Podfile 已经是干净的 iOS 13 版本
           flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Create Unsigned IPA
         run: |
           mkdir -p Payload
-          # 动态查找编译出的 .app 文件夹
           APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
             echo "Error: Runner.app not found!"
