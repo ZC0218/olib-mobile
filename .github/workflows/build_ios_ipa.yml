@@ -21,7 +21,7 @@ jobs:
       - name: Flutter 版本确认
         run: flutter --version
 
-      # 🔥 核心修复：完整补全 Book 类的所有缺失字段（id/extension/filesizeString）
+      # 🔥 核心修复：完整补全 Book 类的所有缺失字段（id/name/title/author/extension/filesizeString）
       - name: 完整修复 Book 模型类
         run: |
           # 直接重写 Book 类文件，包含项目调用的所有核心字段
@@ -30,22 +30,28 @@ jobs:
           class Book {
             final String id;
             final String name;
+            final String title;
+            final String? author;
             final String? extension;
             final String? filesizeString;
 
             Book({
               required this.id,
               required this.name,
+              required this.title,
+              this.author,
               this.extension,
               this.filesizeString,
             });
 
             // 可选：添加空值安全的 getter，避免运行时报错
+            String get safeTitle => title;
+            String get safeAuthor => author ?? '';
             String get safeExtension => extension ?? '';
             String get safeFilesizeString => filesizeString ?? '';
           }
           EOF
-          echo "✅ 已生成完整的 Book 类（包含 id/extension/filesizeString）"
+          echo "✅ 已生成完整的 Book 类（包含 id/name/title/author/extension/filesizeString）"
           cat lib/models/book.dart # 打印验证
 
       - name: 获取依赖
