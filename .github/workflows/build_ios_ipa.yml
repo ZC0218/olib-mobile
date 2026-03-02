@@ -1,4 +1,4 @@
-name: Build Unsigned IPA (The Final Stand)
+name: Build Unsigned App (Final Bypass)
 
 on:
   workflow_dispatch:
@@ -18,69 +18,28 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Prepare Flutter Assets
+      - name: Reset and Clean Environment
         run: |
+          # 彻底清理之前的残留，防止 "Failed to build bundle"
+          flutter clean
+          rm -rf ios/Pods
+          rm -f ios/Podfile ios/Podfile.lock
           flutter pub get
-          # 仅编译 Flutter 层面的资源（AOT/Bundle），不涉及 iOS 项目构建
-          flutter build bundle
-          
-      - name: Setup CocoaPods and Patch
-        run: |
-          cd ios
-          # 强制生成标准的 Podfile
-          pod init || true 
-          # 暴力注入：强制 iOS 13 且彻底禁用签名检查
-          cat <<EOF > Podfile
-          platform :ios, '13.0'
-          use_frameworks!
-          target 'Runner' do
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
-              flutter_additional_ios_build_settings(target)
-              target.build_configurations.each do |config|
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-                config.build_settings['CODE_SIGN_IDENTITY'] = ''
-              end
-            end
-          end
-          EOF
-          pod install --repo-update
 
-      - name: Hardcode Project File (Final Removal)
+      - name: Build Unsigned Debug App (No-Sign Passage)
         run: |
-          cd ios
-          # 彻底移除所有可能导致报错的签名引用
-          sed -i '' '/DEVELOPMENT_TEAM/d' Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
+          # 使用 --debug 模式，这是唯一 100% 绕过签名校验的官方路径
+          # TrollStore 用户其实并不在乎是 Debug 还是 Release，能跑最重要
+          flutter build ios --debug --no-codesign --no-tree-shake-icons
 
-      - name: Native Xcode Build (No Flutter Command)
-        run: |
-          cd ios
-          # 直接使用 xcodebuild，这是绕过 flutter 检查的最稳妥办法
-          xcodebuild -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            GENERATE_INFOPLIST_FILE=YES \
-            | xcpretty
-
-      - name: Package IPA for TrollStore
+      - name: Package for TrollStore
         run: |
           mkdir -p Payload
-          # 搜索编译出来的产物
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d | grep "Release-iphoneos" | head -n 1)
+          # 定位生成的 Debug 版本的 Runner.app
+          APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Build failed: Runner.app not found in DerivedData"
-            exit 1
+             echo "Debug Build failed to produce Runner.app"
+             exit 1
           fi
           cp -r "$APP_PATH" Payload/
           zip -r olib-mobile-unsigned.ipa Payload
