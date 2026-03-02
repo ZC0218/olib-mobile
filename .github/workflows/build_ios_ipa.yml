@@ -24,21 +24,57 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
-      # 强制提升 iOS 版本
-      - name: 修改 iOS Deployment Target
+      # 🔥 核心修复：重写 Podfile，统一所有目标的 iOS 部署版本 + 修复 Swift 编译配置
+      - name: 修复 Podfile（统一 iOS 14.0 部署目标 + Swift 配置）
         run: |
-          sed -i '' "s/platform :ios, .*/platform :ios, '14.0'/" ios/Podfile || true
-          echo "platform :ios, '14.0'" >> ios/Podfile
+          cd ios
+          # 1. 备份原 Podfile
+          cp Podfile Podfile.bak
+          # 2. 重写 Podfile，强制全局 iOS 14.0 + 统一所有 Pod 的部署目标
+          cat > Podfile << 'EOF'
+          # 全局指定 iOS 最低部署版本
+          platform :ios, '14.0'
 
-      - name: 安装 Pods
+          # 加载 Flutter 辅助脚本
+          flutter_application_path = '..'
+          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+
+            flutter_install_all_ios_pods flutter_application_path
+
+            # 强制所有 Pod 的部署目标为 14.0 + 统一 Swift 编译配置
+            post_install do |installer|
+              installer.pods_project.targets.each do |target|
+                flutter_additional_ios_build_settings(target)
+                # 统一所有 Pod 的 iOS 部署目标
+                target.build_configurations.each do |config|
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+                  # 修复 Swift 优化级别冲突
+                  config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-O'
+                  config.build_settings['SWIFT_VERSION'] = '5.0'
+                end
+              end
+            end
+          end
+          EOF
+          # 3. 打印修改后的 Podfile 便于调试
+          cat Podfile
+          cd ..
+
+      - name: 安装 Pods（清理缓存 + 强制更新）
         run: |
           cd ios
           pod deintegrate
-          rm -rf Pods Podfile.lock
-          pod install --repo-update
+          rm -rf Pods Podfile.lock .symlinks
+          pod repo update
+          pod install --verbose
+          cd ..
 
-      # 🔥 关键：使用 xcodebuild 手动关闭签名
-      - name: Xcode 构建（完全关闭签名）
+      # 🔥 优化 Xcode 构建参数：指定架构 + 关闭签名 + 适配最新 Xcode
+      - name: Xcode 构建（完全关闭签名 + 适配部署目标）
         run: |
           cd ios
           xcodebuild \
@@ -46,17 +82,29 @@ jobs:
             -scheme Runner \
             -configuration Release \
             -sdk iphoneos \
+            -arch arm64 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0 \
+            ONLY_ACTIVE_ARCH=NO \
             build
+          cd ..
 
-      - name: 创建 IPA
+      - name: 创建 IPA（校验 Runner.app 存在性）
         run: |
+          # 校验编译产物是否存在
+          if [ ! -d "ios/build/Release-iphoneos/Runner.app" ]; then
+            echo "❌ 未找到 Runner.app 编译产物"
+            exit 1
+          fi
+          # 打包 IPA
           mkdir -p build/ipa/Payload
           cp -R ios/build/Release-iphoneos/Runner.app build/ipa/Payload/
           cd build/ipa
           zip -r ../../Olib-Unsigned.ipa Payload
+          cd ../..
 
       - name: 上传 IPA
         uses: actions/upload-artifact@v4
