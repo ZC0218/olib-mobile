@@ -28,12 +28,14 @@ jobs:
       - name: 安装 CocoaPods
         run: |
           cd ios
-          pod install
+          pod deintegrate
+          rm -rf Podfile.lock Pods
+          pod install --repo-update
 
       - name: 构建 iOS (无签名)
         run: flutter build ios --release --no-codesign
 
-      - name: 创建 IPA 目录
+      - name: 创建 IPA
         run: |
           mkdir -p build/ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
