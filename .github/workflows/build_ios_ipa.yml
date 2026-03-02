@@ -57,6 +57,38 @@ jobs:
       - name: 获取依赖
         run: flutter pub get
 
+      # 🔥 关键：在 Podfile 中强制所有 Pod 的部署目标为 12.0
+      - name: 修复 Podfile 部署目标
+        run: |
+          cd ios
+          # 确保 Podfile 存在
+          flutter pub get
+          # 重写 Podfile，强制部署目标为 12.0
+          cat > Podfile << 'EOF'
+          platform :ios, '12.0'
+
+          flutter_application_path = '..'
+          load File.join(flutter_application_path, '.ios', 'Flutter', 'podhelper.rb')
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+            flutter_install_all_ios_pods flutter_application_path
+
+            post_install do |installer|
+              installer.pods_project.targets.each do |target|
+                flutter_additional_ios_build_settings(target)
+                target.build_configurations.each do |config|
+                  # 强制所有 Pod 的部署目标为 12.0
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+                end
+              end
+            end
+          end
+          EOF
+          cat Podfile # 打印验证
+          cd ..
+
       # 🔥 关键：使用 Flutter 官方命令，自动处理 Pods 并构建
       - name: Flutter 构建 iOS（Debug 模拟器版，绕过所有限制）
         run: |
