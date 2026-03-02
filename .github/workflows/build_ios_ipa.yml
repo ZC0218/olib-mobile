@@ -18,58 +18,59 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Reconstruct Podfile and Fix Version
+      - name: Patch iOS Configuration
         run: |
           flutter pub get
           cd ios
-          # 彻底删除旧 Podfile，新建一个干净的、符合 iOS 13+ 要求的 Podfile
-          rm -f Podfile Podfile.lock
-          cat <<EOF > Podfile
-          platform :ios, '13.0'
-          use_frameworks!
-          use_modular_headers!
-
-          target 'Runner' do
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
+          # 1. 强制将 Podfile 中的平台版本改为 13.0
+          sed -i '' "s/platform :ios, '.*'/platform :ios, '13.0'/g" Podfile
+          
+          # 2. 注入禁用签名的后置钩子 (如果已存在则替换)
+          # 我们直接在文件末尾添加一段逻辑，强制覆盖所有 Target 的签名设置
+          cat <<EOF >> Podfile
 
           post_install do |installer|
             installer.pods_project.targets.each do |target|
-              flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
-                # 强制禁用所有签名需求
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY'] = ''
-                config.build_settings['ENABLE_BITCODE'] = 'NO'
               end
             end
           end
           EOF
+          
+          # 3. 安装依赖，--repo-update 确保能找到最新的 url_launcher_ios
           pod install --repo-update
 
-      - name: Global Signing Disable
+      - name: Disable Xcode Project Signing
         run: |
-          # 针对 Xcode 项目文件进行最后的暴力抹除
+          # 彻底抹除项目文件中的 Team ID 和证书要求
           sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER =/ //g' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM =/ //g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
           
-          # 在全局配置中写入关闭签名的指令
+          # 在生成的配置文件中强行注入禁用签名环境变量
           echo "CODE_SIGNING_ALLOWED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGNING_REQUIRED=NO" >> ios/Flutter/Generated.xcconfig
           echo "CODE_SIGN_IDENTITY=" >> ios/Flutter/Generated.xcconfig
 
       - name: Build iOS Release
         run: |
-          # 使用最高权限忽略参数进行构建
+          # 使用 --no-codesign 忽略签名错误
+          # 添加 --verbose 可以看到更详细的报错（如果失败的话）
           flutter build ios --release --no-codesign --no-tree-shake-icons
 
       - name: Create Unsigned IPA
         run: |
           mkdir -p Payload
-          # 寻找生成的 Runner.app
+          # 动态查找编译产物并移动
           APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Runner.app not found"
+            exit 1
+          fi
           cp -r "$APP_PATH" Payload/
           zip -r olib-mobile-unsigned.ipa Payload
           
