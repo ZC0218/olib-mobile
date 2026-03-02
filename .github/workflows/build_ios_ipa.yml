@@ -1,4 +1,4 @@
-name: Build Unsigned App (Native Force)
+name: Build Unsigned IPA (The Final Stand)
 
 on:
   workflow_dispatch:
@@ -18,37 +18,50 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Build Flutter Framework (AOT)
+      - name: Prepare Flutter Assets
         run: |
           flutter pub get
-          # 关键点 1：只编译代码和资源，不触发最后的 Xcode 签名校验
-          flutter build ios --release --no-codesign --no-tree-shake-icons --build-number=1
-
-      - name: Patch Pods for iOS 13
+          # 仅编译 Flutter 层面的资源（AOT/Bundle），不涉及 iOS 项目构建
+          flutter build bundle
+          
+      - name: Setup CocoaPods and Patch
         run: |
           cd ios
-          # 关键点 2：暴力解决 url_launcher 等插件的版本问题
-          sed -i '' "s/platform :ios, .*/platform :ios, '13.0'/g" Podfile
-          # 注入一个万能的 post_install，强行关闭所有 Target 的签名
-          cat <<EOF > patch.rb
+          # 强制生成标准的 Podfile
+          pod init || true 
+          # 暴力注入：强制 iOS 13 且彻底禁用签名检查
+          cat <<EOF > Podfile
+          platform :ios, '13.0'
+          use_frameworks!
+          target 'Runner' do
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
           post_install do |installer|
             installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-                config.build_settings['ENABLE_BITCODE'] = 'NO'
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+                config.build_settings['CODE_SIGN_IDENTITY'] = ''
               end
             end
           end
           EOF
-          cat patch.rb >> Podfile
           pod install --repo-update
 
-      - name: Force Native Xcode Build
+      - name: Hardcode Project File (Final Removal)
         run: |
           cd ios
-          # 关键点 3：直接绕过 flutter build，用原生命令强行链接二进制
-          # 使用 -allowProvisioningDeviceRegistration=NO 彻底锁死联网检查
+          # 彻底移除所有可能导致报错的签名引用
+          sed -i '' '/DEVELOPMENT_TEAM/d' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' Runner.xcodeproj/project.pbxproj
+
+      - name: Native Xcode Build (No Flutter Command)
+        run: |
+          cd ios
+          # 直接使用 xcodebuild，这是绕过 flutter 检查的最稳妥办法
           xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -57,24 +70,18 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            COMPILER_INDEX_STORE_ENABLE=NO \
+            GENERATE_INFOPLIST_FILE=YES \
             | xcpretty
 
-      - name: Manual IPA Packaging
+      - name: Package IPA for TrollStore
         run: |
           mkdir -p Payload
-          # 寻找编译出的二进制文件夹
+          # 搜索编译出来的产物
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d | grep "Release-iphoneos" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find build/ios/iphoneos -name "Runner.app" -type d | head -n 1)
-          fi
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "Failed to find Runner.app"
+            echo "Build failed: Runner.app not found in DerivedData"
             exit 1
           fi
-          
           cp -r "$APP_PATH" Payload/
           zip -r olib-mobile-unsigned.ipa Payload
           
