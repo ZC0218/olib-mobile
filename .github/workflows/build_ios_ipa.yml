@@ -22,56 +22,48 @@ jobs:
         run: |
           flutter pub get
           cd ios
-          # 1. 强制生成一个标准干净的 Podfile
+          # 1. 彻底重置 Podfile，确保环境纯净
           rm -f Podfile Podfile.lock
           flutter build ios --no-codesign --release --no-tree-shake-icons || true
           
-          # 2. 用最简单的 sed 修改平台版本
-          sed -i '' "s/platform :ios, '12.0'/platform :ios, '13.0'/g" Podfile
-          sed -i '' "s/platform :ios, '11.0'/platform :ios, '13.0'/g" Podfile
-
-          # 3. 注入禁用签名逻辑（使用追加方式，但先清理旧的 post_install）
+          # 2. 强制修改版本并注入禁用签名逻辑
+          sed -i '' "s/platform :ios, .*/platform :ios, '13.0'/g" Podfile
           sed -i '' '/post_install do |installer|/,$d' Podfile
           cat <<EOF >> Podfile
           post_install do |installer|
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
                 config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
                 config.build_settings['CODE_SIGN_IDENTITY'] = ''
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
               end
             end
           end
           EOF
-
           pod install --repo-update
 
-      - name: Hard Disable Xcode Signing
+      - name: Final Build with Hardcoded Overrides
         run: |
-          # 注入最高优先级的环境变量
-          mkdir -p ios/Flutter
-          {
-            echo "CODE_SIGNING_ALLOWED=NO"
-            echo "CODE_SIGNING_REQUIRED=NO"
-            echo "CODE_SIGN_IDENTITY="
-            echo "EXPANDED_CODE_SIGN_IDENTITY="
-            echo "CODE_SIGNING_INJECT_BASE_ENTITLEMENTS=NO"
-            echo "IPHONEOS_DEPLOYMENT_TARGET=13.0"
-          } >> ios/Flutter/Generated.xcconfig
-
-      - name: Final Build Attempt
-        run: |
-          # 执行真正的编译
-          flutter build ios --release --no-codesign --no-tree-shake-icons
+          # 核心改动：在构建命令中通过 --extra-front-end-options 
+          # 和直接透传编译器参数来彻底杀死签名校验
+          flutter build ios --release --no-codesign --no-tree-shake-icons \
+            --xcconfig-overrides=ios/Flutter/Generated.xcconfig \
+            --build-name=1.0.0 --build-number=1 \
+            --verbose \
+            --extra-gen-snapshot-options="--no-codesign" || \
+          # 如果上面失败，尝试直接使用 xcodebuild 逻辑的变体
+          flutter build ios --release --no-codesign --no-tree-shake-icons \
+            --code-sign-identity="" --code-signing-required=NO --code-signing-allowed=NO
 
       - name: Create Unsigned IPA
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/ios/iphoneos -name "Runner.app" | head -n 1)
+          # 动态匹配 Runner.app 路径
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Error: Runner.app not found!"
+            echo "Error: Build output not found!"
             exit 1
           fi
           cp -r "$APP_PATH" Payload/
