@@ -1,24 +1,23 @@
-name: FINAL iOS Build (NO SIGN REQUIRED)
+name: iOS Build FINAL (No Sign Check)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-ios:
+  build:
     runs-on: macos-14
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ✅ Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
           cache: false
 
-      - name: Env Check
+      - name: Env
         run: |
           flutter --version
           dart --version
@@ -38,21 +37,17 @@ jobs:
       - name: Codegen
         run: dart run build_runner build --delete-conflicting-outputs
 
-      # ✅ 重建 iOS
+      # ✅ 重建 iOS 工程
       - name: Recreate iOS
         run: flutter create .
 
-      # ✅ Pods
-      - name: Pods install
+      # ✅ 安装 Pods
+      - name: Pods
         run: |
           cd ios
           pod install --repo-update
 
-      # ❗关键：先生成 Xcode 工程（但不编译）
-      - name: Prepare iOS build
-        run: flutter build ios --config-only
-
-      # ❗核心：用 xcodebuild 强制禁用签名
+      # ❗关键：用 Xcode 直接构建（完全禁签名）
       - name: Xcode build (NO SIGN)
         run: |
           cd ios
@@ -65,6 +60,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             build
 
       # ✅ 打包 IPA
@@ -79,5 +76,5 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: final-ipa
+          name: ipa-no-sign
           path: build/ios/ipa/app.ipa
