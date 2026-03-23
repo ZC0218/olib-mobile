@@ -1,4 +1,4 @@
-name: iOS Enterprise Build
+name: iOS Enterprise Build FINAL
 
 on:
   workflow_dispatch:
@@ -8,25 +8,41 @@ jobs:
     runs-on: macos-14
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Flutter
-      - uses: subosito/flutter-action@v2
+      # ✅ Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
 
-      # 依赖
-      - name: Install deps
+      - name: Environment Info
+        run: |
+          flutter --version
+          dart --version
+          xcodebuild -version
+
+      # ✅ 清理
+      - name: Clean Project
         run: |
           flutter clean
-          flutter pub get
-          dart run build_runner build --delete-conflicting-outputs
+          rm -rf ios
+          rm -rf pubspec.lock
 
-     # 重建 iOS（修复 org 冲突）
-- name: Recreate iOS
-  run: flutter create . --org com.openlibrary
-  
-      # 导入证书
+      # ✅ 依赖
+      - name: Get Dependencies
+        run: flutter pub get
+
+      # ✅ 代码生成
+      - name: Code Generation
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      # ✅ 修复 org 冲突（关键）
+      - name: Recreate iOS Project
+        run: flutter create . --org com.openlibrary
+
+      # ✅ 导入证书
       - name: Install Certificate
         run: |
           echo "$P12_BASE64" | base64 --decode > cert.p12
@@ -42,7 +58,7 @@ jobs:
           P12_BASE64: ${{ secrets.P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
 
-      # 描述文件
+      # ✅ 安装描述文件
       - name: Install Provisioning Profile
         run: |
           echo "$PROVISION_BASE64" | base64 --decode > profile.mobileprovision
@@ -52,20 +68,35 @@ jobs:
         env:
           PROVISION_BASE64: ${{ secrets.PROVISION_BASE64 }}
 
-      # 修复 Pods
-      - name: Pods
+      # ✅ Pods 修复（iOS 12 问题）
+      - name: Fix Pods + Install
         run: |
           cd ios
+
           sed -i '' 's/platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+
+          cat >> Podfile <<'EOF'
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+    end
+  end
+end
+EOF
+
           pod deintegrate
           pod install --repo-update
 
-      # 打包
+      # ✅ 正式打包（企业签名）
       - name: Build IPA
         run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
 
-      # 上传
-      - uses: actions/upload-artifact@v4
+      # ✅ 上传
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
         with:
-          name: ipa
+          name: enterprise-ipa
           path: build/ios/ipa/*.ipa
+          retention-days: 7
