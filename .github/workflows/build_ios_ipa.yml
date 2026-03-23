@@ -1,60 +1,85 @@
-name: Build iOS (Flutter → IPA)
+name: Stable iOS Build (Flutter → IPA)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-ios:
     runs-on: macos-14
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ✅ 关键修复：使用正确 Flutter 版本（支持 Dart 3.8+）
+      # ✅ 固定 Flutter（关键！）
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
-          cache: true
+          channel: stable
+          cache: false   # ❗关闭缓存，避免脏环境
 
-      - name: Check versions
+      # ✅ 环境确认
+      - name: Environment Info
         run: |
+          echo "=== FLUTTER VERSION ==="
           flutter --version
+          echo "=== DART VERSION ==="
           dart --version
+          echo "=== XCODE VERSION ==="
+          xcodebuild -version
 
+      # ✅ 清理（非常关键）
+      - name: Clean project
+        run: |
+          flutter clean
+          rm -rf ios
+          rm -rf pubspec.lock
+
+      # ✅ 重新获取依赖
       - name: Get dependencies
         run: flutter pub get
 
-      # ✅ 必须执行（否则会报 *.g.dart 缺失）
+      # ✅ 代码生成（必须）
       - name: Code generation
-        run: dart run build_runner build --delete-conflicting-outputs
-
-      # ✅ 修复 iOS 工程缺失问题
-      - name: Recreate iOS project
         run: |
-          rm -rf ios
-          flutter create .
+          dart run build_runner clean
+          dart run build_runner build --delete-conflicting-outputs
 
-      - name: Install CocoaPods
+      # ✅ 重建 iOS 工程（核心稳定点）
+      - name: Recreate iOS project
+        run: flutter create .
+
+      # ✅ CocoaPods 全量更新（慢但稳）
+      - name: Install Pods (Full Update)
         run: |
           cd ios
-          pod install
+          pod deintegrate
+          pod setup
+          pod install --repo-update
 
-      # ✅ 无签名构建（最稳定）
-      - name: Build iOS
+      # ✅ 第一次构建（有时会失败但能生成缓存）
+      - name: First build (warm up)
+        continue-on-error: true
+        run: flutter build ios --release --no-codesign
+
+      # ✅ 第二次构建（真正稳定输出）
+      - name: Final build
         run: flutter build ios --release --no-codesign
 
       # ✅ 打包 IPA
       - name: Package IPA
         run: |
+          rm -rf build/ios/ipa
           mkdir -p build/ios/ipa/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           cd build/ios/ipa
           zip -r app.ipa Payload
 
+      # ✅ 上传
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa
+          name: stable-ios-ipa
           path: build/ios/ipa/app.ipa
+          retention-days: 7
