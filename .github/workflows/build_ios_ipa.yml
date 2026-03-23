@@ -1,54 +1,73 @@
-name: iOS Build FINAL (No Sign Check)
+name: FINAL Stable iOS Build (No Sign + Fix Pods)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-ios:
     runs-on: macos-14
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ✅ 固定 Flutter（解决 Dart 版本问题）
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
           cache: false
 
-      - name: Env
+      - name: Environment Info
         run: |
           flutter --version
           dart --version
+          xcodebuild -version
 
-      # ✅ 清理
-      - name: Clean
+      # ✅ 清理环境（避免脏缓存）
+      - name: Clean Project
         run: |
           flutter clean
           rm -rf ios
           rm -rf pubspec.lock
 
-      # ✅ 依赖
-      - name: Pub get
+      # ✅ 获取依赖
+      - name: Get Dependencies
         run: flutter pub get
 
-      # ✅ 代码生成
-      - name: Codegen
+      # ✅ 代码生成（必须）
+      - name: Code Generation
         run: dart run build_runner build --delete-conflicting-outputs
 
-      # ✅ 重建 iOS 工程
-      - name: Recreate iOS
+      # ✅ 重建 iOS 工程（关键）
+      - name: Recreate iOS Project
         run: flutter create .
 
-      # ✅ 安装 Pods
-      - name: Pods
+      # ✅ 修复 Pods + 安装（解决 iOS 12 报错）
+      - name: Fix Pods + Install
         run: |
           cd ios
+
+          # 设置最低版本为 12.0
+          sed -i '' 's/platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+
+          # 强制所有 Pods 使用 iOS 12
+          cat >> Podfile <<'EOF'
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+    end
+  end
+end
+EOF
+
+          pod deintegrate
           pod install --repo-update
 
-      # ❗关键：用 Xcode 直接构建（完全禁签名）
-      - name: Xcode build (NO SIGN)
+      # ❗核心：完全绕过签名
+      - name: Build with Xcode (No Signing)
         run: |
           cd ios
           xcodebuild \
@@ -72,9 +91,10 @@ jobs:
           cd build/ios/ipa
           zip -r app.ipa Payload
 
-      # ✅ 上传
-      - name: Upload
+      # ✅ 上传产物
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ipa-no-sign
+          name: final-ipa
           path: build/ios/ipa/app.ipa
+          retention-days: 7
