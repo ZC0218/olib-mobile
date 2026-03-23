@@ -1,4 +1,4 @@
-name: FINAL Stable iOS Build (No Sign + Fix Pods)
+name: Build iOS IPA (No Sign)
 
 on:
   workflow_dispatch:
@@ -8,50 +8,39 @@ jobs:
     runs-on: macos-14
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # ✅ 固定 Flutter（解决 Dart 版本问题）
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
-          cache: false
 
-      - name: Environment Info
+      - name: Show Environment
         run: |
           flutter --version
           dart --version
           xcodebuild -version
 
-      # ✅ 清理环境（避免脏缓存）
       - name: Clean Project
         run: |
           flutter clean
-          rm -rf ios
+          rm -rf ios/Pods
           rm -rf pubspec.lock
 
-      # ✅ 获取依赖
       - name: Get Dependencies
         run: flutter pub get
 
-      # ✅ 代码生成（必须）
-      - name: Code Generation
+      - name: Run Code Generation
         run: dart run build_runner build --delete-conflicting-outputs
 
-      # ✅ 重建 iOS 工程（关键）
       - name: Recreate iOS Project
         run: flutter create .
 
-      # ✅ 修复 Pods + 安装（解决 iOS 12 报错）
-      - name: Fix Pods + Install
+      - name: Fix iOS Pods
         run: |
           cd ios
-
-          # 设置最低版本为 12.0
-          sed -i '' 's/platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
-
-          # 强制所有 Pods 使用 iOS 12
+          sed -i '' "s/platform :ios, .*/platform :ios, '12.0'/g" Podfile
           cat >> Podfile <<'EOF'
 
 post_install do |installer|
@@ -62,12 +51,10 @@ post_install do |installer|
   end
 end
 EOF
-
           pod deintegrate
           pod install --repo-update
 
-      # ❗核心：完全绕过签名
-      - name: Build with Xcode (No Signing)
+      - name: Build IPA (No Signing)
         run: |
           cd ios
           xcodebuild \
@@ -77,13 +64,11 @@ EOF
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             build
 
-      # ✅ 打包 IPA
       - name: Package IPA
         run: |
           mkdir -p build/ios/ipa/Payload
@@ -91,10 +76,8 @@ EOF
           cd build/ios/ipa
           zip -r app.ipa Payload
 
-      # ✅ 上传产物
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: final-ipa
+          name: app.ipa
           path: build/ios/ipa/app.ipa
-          retention-days: 7
