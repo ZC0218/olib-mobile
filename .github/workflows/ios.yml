@@ -8,10 +8,10 @@ jobs:
     runs-on: macos-14
 
     steps:
-      # 1️⃣ 拉取源码
+      # 1️⃣ 拉取代码
       - uses: actions/checkout@v4
 
-      # 2️⃣ 设置 Flutter
+      # 2️⃣ 安装 Flutter
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
@@ -19,7 +19,7 @@ jobs:
       # 3️⃣ 安装依赖
       - run: flutter pub get
 
-      # 4️⃣ 修复 iOS 工程（解决 org 冲突）
+      # 4️⃣ 修复 Flutter iOS 工程 org 冲突
       - run: flutter create . --org com.openlibrary
 
       # 5️⃣ 导入企业证书
@@ -44,14 +44,15 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      # 7️⃣ 修复 Pods iOS 12+
+      # 7️⃣ 修复 Podfile 指定最低 iOS 版本，并安装 Pods
       - name: Install Pods
         run: |
           cd ios
-          sed -i '' 's/platform :ios, .*/platform :ios, '\''12.0'\''/' Podfile
+          # 指定 iOS 12.0 作为最低版本
+          sed -i '' "s/platform :ios, .*/platform :ios, '12.0'/" Podfile || echo "platform :ios, '12.0'" >> Podfile
           pod install --repo-update
 
-      # 8️⃣ 打印 ios 文件夹调试（确保 ExportOptions.plist 存在）
+      # 8️⃣ 调试 ios 文件夹，确认 ExportOptions.plist 存在
       - name: Debug ios directory
         run: |
           pwd
