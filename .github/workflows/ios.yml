@@ -22,9 +22,10 @@ jobs:
           flutter pub get
           dart run build_runner build --delete-conflicting-outputs
 
-      # 重建 iOS
-      - run: flutter create .
-
+     # 重建 iOS（修复 org 冲突）
+- name: Recreate iOS
+  run: flutter create . --org com.openlibrary
+  
       # 导入证书
       - name: Install Certificate
         run: |
