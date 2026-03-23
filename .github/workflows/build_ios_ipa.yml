@@ -11,41 +11,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 关键：锁定 Flutter 版本（适配 Dart 3.8+）
+      # ✅ 关键修复：使用正确 Flutter 版本（支持 Dart 3.8+）
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.22.2"
+          flutter-version: "3.41.5"
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
+      - name: Check versions
+        run: |
+          flutter --version
+          dart --version
 
-      # 关键：依赖
-      - name: Get packages
+      - name: Get dependencies
         run: flutter pub get
 
-      # ❗必须：代码生成（这个项目用到了 freezed / json）
+      # ✅ 必须执行（否则会报 *.g.dart 缺失）
       - name: Code generation
         run: dart run build_runner build --delete-conflicting-outputs
 
-      # ❗关键修复：重新生成 iOS 工程（因为仓库缺配置）
-      - name: Recreate iOS folder
+      # ✅ 修复 iOS 工程缺失问题
+      - name: Recreate iOS project
         run: |
           rm -rf ios
           flutter create .
 
-      # CocoaPods
-      - name: Install Pods
+      - name: Install CocoaPods
         run: |
           cd ios
           pod install
 
-      # ❗只编译，不签名（稳定）
+      # ✅ 无签名构建（最稳定）
       - name: Build iOS
         run: flutter build ios --release --no-codesign
 
-      # 手动打包 IPA（无签名）
+      # ✅ 打包 IPA
       - name: Package IPA
         run: |
           mkdir -p build/ios/ipa/Payload
