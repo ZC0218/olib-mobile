@@ -17,12 +17,29 @@ class BookCard extends StatefulWidget {
   State<BookCard> createState() => _BookCardState();
 }
 
-class _BookCardState extends State<BookCard> {
+class _BookCardState extends State<BookCard> with SingleTickerProviderStateMixin {
   bool _shouldLoadImage = false;
+  
+  // Press feedback
+  double _scale = 1.0;
+  
+  // Shimmer animation
+  late final AnimationController _shimmerController;
+  late final Animation<double> _shimmerAnimation;
   
   @override
   void initState() {
     super.initState();
+    
+    // Shimmer sweep animation
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+    _shimmerAnimation = Tween<double>(begin: -1.0, end: 2.0).animate(
+      CurvedAnimation(parent: _shimmerController, curve: Curves.easeInOutSine),
+    );
+    
     // Delay image loading slightly to allow layout to complete
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
@@ -30,102 +47,132 @@ class _BookCardState extends State<BookCard> {
       }
     });
   }
+  
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails details) {
+    setState(() => _scale = 0.96);
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    setState(() => _scale = 1.0);
+  }
+
+  void _onTapCancel() {
+    setState(() => _scale = 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Soft Card UI: White surface, soft shadow, rounded corners
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: widget.onTap,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. Cover Image (Expanded)
-                Expanded(
-                  flex: 3,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (widget.book.cover != null && widget.book.cover!.isNotEmpty && _shouldLoadImage)
-                        CachedNetworkImage(
-                          imageUrl: widget.book.cover!,
-                          fit: BoxFit.cover,
-                          memCacheWidth: 300,
-                          fadeInDuration: const Duration(milliseconds: 300),
-                          fadeOutDuration: const Duration(milliseconds: 100),
-                          httpHeaders: const {
-                            'Connection': 'keep-alive',
-                          },
-                          errorWidget: (context, url, error) => _buildPlaceholder(),
-                          placeholder: (context, url) => _buildShimmer(),
-                        )
-                      else
-                        _shouldLoadImage ? _buildPlaceholder() : _buildShimmer(),
-                    ],
-                  ),
-                ),
-
-                // 2. Info Content
-                Expanded(
-                  flex: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Level 2: Category/Tag (Orange, Small) - ABOVE Title
-                        _buildMetaRow(),
-                        
-                        const SizedBox(height: 4),
-
-                        // Level 1: Title (Black, Bold, Large)
-                        Expanded(
-                          child: Text(
-                            widget.book.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              height: 1.2,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                        
-                        // Level 3: Author (Grey, Secondary)
-                        if (widget.book.author != null && widget.book.author!.isNotEmpty)
-                          Text(
-                            widget.book.author!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              fontSize: 11,
-                            ),
-                          ),
-                          
-                        const SizedBox(height: 8),
-
-                        // Level 3: Bottom row (Stars/Size)
-                        _buildBottomRow(),
-                      ],
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // Soft Card UI with press-scale feedback
+    return AnimatedScale(
+      scale: _scale,
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOutCubic,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Material(
+            color: Colors.transparent,
+            child: GestureDetector(
+              onTapDown: _onTapDown,
+              onTapUp: _onTapUp,
+              onTapCancel: _onTapCancel,
+              child: InkWell(
+                onTap: widget.onTap,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Cover Image (Expanded)
+                    Expanded(
+                      flex: 3,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (widget.book.cover != null && widget.book.cover!.isNotEmpty && _shouldLoadImage)
+                            CachedNetworkImage(
+                              imageUrl: widget.book.cover!,
+                              fit: BoxFit.cover,
+                              memCacheWidth: 300,
+                              fadeInDuration: const Duration(milliseconds: 300),
+                              fadeOutDuration: const Duration(milliseconds: 100),
+                              httpHeaders: const {
+                                'Connection': 'keep-alive',
+                              },
+                              errorWidget: (context, url, error) => _buildPlaceholder(),
+                              placeholder: (context, url) => _buildShimmer(),
+                            )
+                          else
+                            _shouldLoadImage ? _buildPlaceholder() : _buildShimmer(),
+                        ],
+                      ),
                     ),
-                  ),
+
+                    // 2. Info Content
+                    Expanded(
+                      flex: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Level 2: Category/Tag (Orange, Small) - ABOVE Title
+                            _buildMetaRow(),
+                            
+                            const SizedBox(height: 4),
+
+                            // Level 1: Title (Black, Bold, Large)
+                            Expanded(
+                              child: Text(
+                                widget.book.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  height: 1.2,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            
+                            // Level 3: Author (Grey, Secondary)
+                            if (widget.book.author != null && widget.book.author!.isNotEmpty)
+                              Text(
+                                widget.book.author!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  fontSize: 11,
+                                ),
+                              ),
+                              
+                            const SizedBox(height: 8),
+
+                            // Level 3: Bottom row (Stars/Size)
+                            _buildBottomRow(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -206,16 +253,63 @@ class _BookCardState extends State<BookCard> {
     );
   }
 
+  /// Placeholder when no cover or load error — gradient background + book icon
   Widget _buildPlaceholder() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      color: Colors.grey[200],
-      child: const Center(
-        child: Icon(Icons.book_outlined, color: Colors.grey, size: 32),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  AppColors.primary.withOpacity(0.15),
+                  AppColors.primary.withOpacity(0.08),
+                ]
+              : [
+                  AppColors.primary.withOpacity(0.08),
+                  AppColors.primary.withOpacity(0.04),
+                ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.auto_stories_rounded,
+          color: AppColors.primary.withOpacity(isDark ? 0.4 : 0.25),
+          size: 36,
+        ),
       ),
     );
   }
   
+  /// Real shimmer effect — animated gradient sweep
   Widget _buildShimmer() {
-    return Container(color: Colors.grey[100]);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFEEEEEE);
+    final highlightColor = isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5);
+    
+    return AnimatedBuilder(
+      animation: _shimmerAnimation,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                baseColor,
+                highlightColor,
+                baseColor,
+              ],
+              stops: [
+                (_shimmerAnimation.value - 0.3).clamp(0.0, 1.0),
+                _shimmerAnimation.value.clamp(0.0, 1.0),
+                (_shimmerAnimation.value + 0.3).clamp(0.0, 1.0),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }

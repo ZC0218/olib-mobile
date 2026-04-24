@@ -16,13 +16,14 @@ class LocalDownloadsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     // 2 Tabs: Ongoing (Downloading) / Completed
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          backgroundColor: AppColors.background,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           elevation: 0,
           title: Text(AppLocalizations.of(context).get('downloads'), style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
           centerTitle: true,
@@ -60,7 +61,7 @@ class LocalDownloadsScreen extends ConsumerWidget {
               margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.grey[200],
+                color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey[200],
                 borderRadius: BorderRadius.circular(20),
               ),
               child: TabBar(
@@ -178,10 +179,12 @@ class _DownloadItem extends ConsumerWidget {
     final isError = task.status == DownloadStatus.error;
     final isCompleted = task.status == DownloadStatus.completed;
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
