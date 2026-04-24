@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/backend_auth_provider.dart';
 import '../../theme/app_colors.dart';
-import '../../l10n/app_localizations.dart';
 
 /// 微信扫码授权页面
 class QrAuthScreen extends ConsumerStatefulWidget {
@@ -14,6 +13,7 @@ class QrAuthScreen extends ConsumerStatefulWidget {
 
 class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
   bool _isLoading = true;
+  String? _initError;
 
   @override
   void initState() {
@@ -22,43 +22,88 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
   }
 
   Future<void> _initAuth() async {
-    setState(() => _isLoading = true);
-    final notifier = ref.read(backendAuthProvider.notifier);
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _initError = null;
+    });
 
-    // 如果还没注册设备，先注册
-    final state = ref.read(backendAuthProvider);
-    if (state.jwt == null) {
-      await notifier.register();
+    try {
+      final notifier = ref.read(backendAuthProvider.notifier);
+
+      // 1. 确保已注册设备
+      final authState = ref.read(backendAuthProvider);
+      if (authState.jwt == null) {
+        await notifier.register();
+      }
+
+      // 2. 检查注册结果
+      final afterRegister = ref.read(backendAuthProvider);
+      if (afterRegister.error != null) {
+        if (mounted) setState(() {
+          _isLoading = false;
+          _initError = afterRegister.error;
+        });
+        return;
+      }
+
+      // 3. 如果已授权，直接返回
+      if (afterRegister.isAuthorized) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      // 4. 获取二维码
+      await notifier.fetchQrCode();
+
+      // 5. 再次检查（可能 fetchQrCode 发现已授权）
+      final afterQr = ref.read(backendAuthProvider);
+      if (afterQr.isAuthorized) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      // 6. 开始轮询
+      notifier.startPolling();
+    } catch (e) {
+      _initError = e.toString();
     }
-
-    // 如果已授权，直接返回
-    final updatedState = ref.read(backendAuthProvider);
-    if (updatedState.isAuthorized) {
-      if (mounted) Navigator.pop(context, true);
-      return;
-    }
-
-    // 获取二维码
-    await notifier.fetchQrCode();
-
-    // 开始轮询
-    notifier.startPolling();
 
     if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _refreshQrCode() async {
-    setState(() => _isLoading = true);
-    final notifier = ref.read(backendAuthProvider.notifier);
-    notifier.stopPolling();
-    await notifier.fetchQrCode();
-    notifier.startPolling();
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _initError = null;
+    });
+
+    try {
+      final notifier = ref.read(backendAuthProvider.notifier);
+      notifier.stopPolling();
+      await notifier.fetchQrCode();
+
+      final afterQr = ref.read(backendAuthProvider);
+      if (afterQr.isAuthorized) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      notifier.startPolling();
+    } catch (e) {
+      _initError = e.toString();
+    }
+
     if (mounted) setState(() => _isLoading = false);
   }
 
   @override
   void dispose() {
-    ref.read(backendAuthProvider.notifier).stopPolling();
+    // 页面关闭时停止轮询
+    try {
+      ref.read(backendAuthProvider.notifier).stopPolling();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -69,7 +114,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
     final authState = ref.watch(backendAuthProvider);
 
     // 授权成功 → 自动关闭页面
-    if (authState.isAuthorized) {
+    if (authState.isAuthorized && !_isLoading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.pop(context, true);
       });
@@ -111,7 +156,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(width: 48), // 平衡的占位
+                    const SizedBox(width: 48),
                   ],
                 ),
               ),
@@ -134,7 +179,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                           child: const Icon(
                             Icons.qr_code_scanner_rounded,
                             size: 36,
-                            color: Color(0xFF07C160), // 微信绿
+                            color: Color(0xFF07C160),
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -186,6 +231,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
   }
 
   Widget _buildQrSection(BackendAuthState authState, bool isZh) {
+    // 初始化中
     if (_isLoading) {
       return _buildQrContainer(
         child: const SizedBox(
@@ -196,6 +242,31 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       );
     }
 
+    // 初始化错误
+    if (_initError != null) {
+      return _buildQrContainer(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+            const SizedBox(height: 12),
+            Text(
+              _initError!,
+              style: TextStyle(color: Colors.red[400], fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _initAuth,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(isZh ? '重试' : 'Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Provider 级别的错误
     if (authState.error != null && authState.qrUrl == null) {
       return _buildQrContainer(
         child: Column(
@@ -219,6 +290,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
       );
     }
 
+    // 有二维码
     if (authState.qrUrl != null && authState.qrUrl!.isNotEmpty) {
       return Column(
         children: [
@@ -268,9 +340,20 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
     // 兜底
     return _buildQrContainer(
-      child: Text(
-        isZh ? '正在加载...' : 'Loading...',
-        style: TextStyle(color: Colors.grey[500]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isZh ? '正在加载...' : 'Loading...',
+            style: TextStyle(color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: _initAuth,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: Text(isZh ? '重试' : 'Retry'),
+          ),
+        ],
       ),
     );
   }
@@ -334,6 +417,14 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
             ),
           ),
         ],
+      );
+    }
+
+    if (authState.error != null) {
+      return Text(
+        authState.error!,
+        style: TextStyle(color: Colors.orange[700], fontSize: 13),
+        textAlign: TextAlign.center,
       );
     }
 

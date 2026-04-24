@@ -667,9 +667,26 @@ class BookDetailScreen extends ConsumerWidget {
     final authState = ref.read(authProvider);
     final user = authState.user;
 
+    // Build the reader domain from the custom domain:
+    // - If the domain has a language prefix (e.g. zh.bra101.ru), replace it with 'reader'
+    // - Otherwise (e.g. pkuedu.online), prepend 'reader.' to the domain
+    final String readerDomain;
+    final languagePrefixes = {'zh', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ja', 'ko', 'ru', 'ar'};
+    final dotIndex = customDomain.indexOf('.');
+    if (dotIndex > 0) {
+      final prefix = customDomain.substring(0, dotIndex);
+      if (languagePrefixes.contains(prefix)) {
+        readerDomain = 'reader${customDomain.substring(dotIndex)}';
+      } else {
+        readerDomain = 'reader.$customDomain';
+      }
+    } else {
+      readerDomain = 'reader.$customDomain';
+    }
+
     String url = book.readOnlineUrl!;
     url = url.replaceAll(RegExp(r'cdn\.reader\.'), 'reader.');
-    url = url.replaceAll(RegExp(r'reader\.[a-zA-Z0-9.-]+'), 'reader.$customDomain');
+    url = url.replaceAll(RegExp(r'reader\.[a-zA-Z0-9.-]+'), readerDomain);
     url = url.replaceAll(RegExp(r'z-library\.[a-zA-Z]+'), customDomain);
 
     if (user != null) {

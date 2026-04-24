@@ -18,22 +18,12 @@ class DomainSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentDomain = ref.watch(domainProvider);
-    final domainList = ref.watch(domainListProvider);
-
-    // Find label for current domain
-    String currentLabel = 'Custom';
-    for (final entry in domainList.entries) {
-      if (entry.value == currentDomain) {
-        currentLabel = entry.key;
-        break;
-      }
-    }
 
     if (compact) {
       return IconButton(
         icon: const Icon(Icons.dns_outlined),
         color: color ?? AppColors.textPrimary,
-        tooltip: 'Switch Network ($currentLabel)',
+        tooltip: 'Switch Network ($currentDomain)',
         onPressed: () => _showDialog(context),
       );
     }
@@ -60,12 +50,13 @@ class DomainSelector extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              currentLabel,
+              currentDomain,
               style: TextStyle(
                 color: color ?? AppColors.primary,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(width: 4),
             Icon(
@@ -93,180 +84,246 @@ class DomainSelectionDialog extends ConsumerStatefulWidget {
   ConsumerState<DomainSelectionDialog> createState() => _DomainSelectionDialogState();
 }
 
+/// Result of a single domain speed test.
+class _DomainResult {
+  final String domain;
+  /// null = still checking, -1 = failed, >0 = latency in ms
+  int? latencyMs;
+
+  _DomainResult(this.domain);
+}
+
 class _DomainSelectionDialogState extends ConsumerState<DomainSelectionDialog> {
-  final Map<String, bool?> _statusMap = {};
+  List<_DomainResult> _results = [];
+  String _filter = '';
+  bool _testing = false;
+  int _testedCount = 0;
+
+  /// Max concurrent requests to avoid flooding the network.
+  static const int _maxConcurrent = 8;
 
   @override
   void initState() {
     super.initState();
-    // Start checking immediately
+    _initResults();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAllDomains();
+      _runSpeedTest();
     });
   }
 
-  Future<void> _checkAllDomains() async {
-    final domainList = ref.read(domainListProvider);
-    for (final domain in domainList.values) {
-      _checkDomain(domain);
+  void _initResults() {
+    final domains = ref.read(domainListProvider);
+    _results = domains.map((d) => _DomainResult(d)).toList();
+  }
+
+  /// Concurrent speed test with semaphore pattern.
+  Future<void> _runSpeedTest() async {
+    if (_testing) return;
+    setState(() {
+      _testing = true;
+      _testedCount = 0;
+      for (final r in _results) {
+        r.latencyMs = null;
+      }
+    });
+
+    // Create a pool of futures with bounded concurrency.
+    int running = 0;
+    int index = 0;
+    final completer = Completer<void>();
+
+    void scheduleNext() {
+      while (running < _maxConcurrent && index < _results.length) {
+        final r = _results[index++];
+        running++;
+        _checkDomain(r).whenComplete(() {
+          running--;
+          _testedCount++;
+          if (mounted) setState(() {});
+          if (index < _results.length) {
+            scheduleNext();
+          } else if (running == 0) {
+            completer.complete();
+          }
+        });
+      }
+    }
+
+    scheduleNext();
+    await completer.future;
+
+    if (mounted) {
+      // Sort: successful (ascending latency) first, then failed at bottom.
+      _results.sort((a, b) {
+        final la = a.latencyMs ?? 99999;
+        final lb = b.latencyMs ?? 99999;
+        final aOk = la > 0 && la < 99999;
+        final bOk = lb > 0 && lb < 99999;
+        if (aOk && !bOk) return -1;
+        if (!aOk && bOk) return 1;
+        return la.compareTo(lb);
+      });
+      setState(() => _testing = false);
     }
   }
 
-  Future<void> _checkDomain(String domain) async {
+  Future<void> _checkDomain(_DomainResult result) async {
+    final sw = Stopwatch()..start();
     try {
-      // Check API endpoint - returns {"success":1,...} when working
-      final uri = Uri.parse('https://$domain/eapi/info/languages');
-      
+      final uri = Uri.parse('https://${result.domain}/eapi/info/languages');
       final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 8);
-      
+      client.connectionTimeout = const Duration(seconds: 6);
+
       try {
         final request = await client.getUrl(uri);
         final response = await request.close().timeout(
-          const Duration(seconds: 10),
+          const Duration(seconds: 8),
         );
-        
-        // Read response body
-        final bodyBytes = await response.expand((chunk) => chunk).toList();
+        // Read a small chunk to confirm it's a real response.
+        final bodyBytes = await response
+            .expand((chunk) => chunk)
+            .toList()
+            .timeout(const Duration(seconds: 5));
         final body = String.fromCharCodes(bodyBytes);
-        
-        debugPrint('Domain $domain: status=${response.statusCode}, body=${body.substring(0, body.length > 100 ? 100 : body.length)}...');
-        
+        sw.stop();
+
+        final isSuccess = body.contains('"success":1') ||
+            body.contains('"success": 1') ||
+            (response.statusCode >= 200 && response.statusCode < 300);
+
         if (mounted) {
           setState(() {
-            // Check if response contains "success":1 or HTTP 2xx
-            final isSuccess = body.contains('"success":1') || 
-                              body.contains('"success": 1') ||
-                              (response.statusCode >= 200 && response.statusCode < 300);
-            _statusMap[domain] = isSuccess;
+            result.latencyMs = isSuccess ? sw.elapsedMilliseconds : -1;
           });
         }
-      } catch (e) {
-        debugPrint('Domain check failed for $domain: $e');
-        if (mounted) setState(() => _statusMap[domain] = false);
+      } catch (_) {
+        sw.stop();
+        if (mounted) setState(() => result.latencyMs = -1);
       } finally {
         client.close();
       }
-    } catch (e) {
-      debugPrint('Domain check error for $domain: $e');
-      if (mounted) setState(() => _statusMap[domain] = false);
+    } catch (_) {
+      sw.stop();
+      if (mounted) setState(() => result.latencyMs = -1);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final currentDomain = ref.watch(domainProvider);
-    final domainList = ref.watch(domainListProvider);
     final locale = Localizations.localeOf(context).languageCode;
     final isZh = locale == 'zh';
+    final domains = ref.watch(domainListProvider);
+
+    // Filter
+    final filtered = _filter.isEmpty
+        ? _results
+        : _results.where((r) =>
+            r.domain.toLowerCase().contains(_filter.toLowerCase())).toList();
+
+    final onlineCount = _results.where((r) => r.latencyMs != null && r.latencyMs! > 0).length;
 
     return AlertDialog(
-      title: Text(isZh ? '选择线路' : 'Select Network'),
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isZh ? '选择线路' : 'Select Network',
+                  style: const TextStyle(fontSize: 18),
+                ),
+              ),
+              // Progress / count badge
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _testing
+                    ? Row(
+                        key: const ValueKey('testing'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              value: _results.isEmpty
+                                  ? null
+                                  : _testedCount / _results.length,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$_testedCount/${_results.length}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        key: const ValueKey('done'),
+                        '$onlineCount/${_results.length} ✓',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: onlineCount > 0 ? Colors.green : Colors.grey,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 36,
+            child: TextField(
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: isZh ? '搜索...' : 'Search...',
+                hintStyle: const TextStyle(fontSize: 13),
+                prefixIcon: const Icon(Icons.search, size: 18),
+                prefixIconConstraints: const BoxConstraints(minWidth: 36),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+              ),
+              onChanged: (v) => setState(() => _filter = v),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
       content: SizedBox(
         width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            ...domainList.entries.map((entry) {
-              final status = _statusMap[entry.value];
-              Color statusColor = Colors.grey.withOpacity(0.3);
-              if (status == true) statusColor = Colors.green;
-              if (status == false) statusColor = Colors.red;
-
-              return RadioListTile<String>(
-                title: Row(
-                  children: [
-                    Expanded(child: Text(entry.key)),
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ),
-                // Domain hidden - only show name
-                value: entry.value,
-                groupValue: currentDomain,
-                onChanged: (value) {
-                  if (value != null) {
-                    ref.read(domainProvider.notifier).setDomain(value);
-                    Navigator.pop(context);
-                  }
-                },
-              );
-            }),
-            // Custom Domain Item
-            Builder(
-              builder: (context) {
-                final isCustom = !domainList.containsValue(currentDomain);
-                final status = isCustom ? _statusMap[currentDomain] : null;
-                
-                Color statusColor = Colors.grey.withOpacity(0.3);
-                if (status == true) statusColor = Colors.green;
-                if (status == false) statusColor = Colors.red;
-
-                // Trigger check if custom and unknown
-                if (isCustom && !_statusMap.containsKey(currentDomain)) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _checkDomain(currentDomain);
-                  });
-                }
-
-                return RadioListTile<String>(
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          isCustom ? 'Custom' : 'Custom Domain',
-                          style: TextStyle(
-                            color: isCustom ? AppColors.textPrimary : AppColors.textSecondary,
-                            fontWeight: isCustom ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                      ),
-                      if (isCustom)
-                        Container(
-                          width: 10,
-                          height: 10,
-                          margin: const EdgeInsets.only(left: 8),
-                          decoration: BoxDecoration(
-                            color: statusColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
-                  ),
-                  // Domain hidden - only show status
-                  subtitle: isCustom 
-                      ? Text(isZh ? '自定义代理' : 'Custom Proxy') 
-                      : Text(isZh ? '点击设置自定义线路' : 'Tap to set custom domain'),
-                  value: isCustom ? currentDomain : 'CUSTOM_PLACEHOLDER_KEY',
-                  groupValue: currentDomain,
-                  secondary: IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () {
-                      _showCustomDomainDialog(context, ref);
-                    },
-                  ),
-                  onChanged: (value) {
-                    _showCustomDomainDialog(context, ref);
-                  },
-                );
-              },
-            ),
-          ],
+        height: MediaQuery.of(context).size.height * 0.55,
+        child: ListView.builder(
+          itemCount: filtered.length + 1, // +1 for custom domain entry
+          itemBuilder: (context, index) {
+            if (index < filtered.length) {
+              return _buildDomainTile(filtered[index], currentDomain);
+            }
+            // Last item: custom domain
+            return _buildCustomTile(currentDomain, domains, isZh);
+          },
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () {
-            setState(() => _statusMap.clear());
-            _checkAllDomains();
+          onPressed: _testing ? null : () {
+            _initResults();
+            _runSpeedTest();
           },
-          child: Text(isZh ? '重新检测' : 'Re-check'),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.speed, size: 16, color: _testing ? Colors.grey : null),
+              const SizedBox(width: 4),
+              Text(isZh ? '重新测速' : 'Re-test'),
+            ],
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -276,8 +333,87 @@ class _DomainSelectionDialogState extends ConsumerState<DomainSelectionDialog> {
     );
   }
 
+  Widget _buildDomainTile(_DomainResult result, String currentDomain) {
+    final isSelected = result.domain == currentDomain;
+    final latency = result.latencyMs;
+
+    // Status indicator
+    Widget trailing;
+    if (latency == null) {
+      // Still testing
+      trailing = const SizedBox(
+        width: 14, height: 14,
+        child: CircularProgressIndicator(strokeWidth: 1.5),
+      );
+    } else if (latency < 0) {
+      // Failed
+      trailing = const Icon(Icons.close, size: 16, color: Colors.red);
+    } else {
+      // Show latency with color coding
+      Color latColor;
+      if (latency < 1000) {
+        latColor = Colors.green;
+      } else if (latency < 3000) {
+        latColor = Colors.orange;
+      } else {
+        latColor = Colors.red;
+      }
+      trailing = Text(
+        '${latency}ms',
+        style: TextStyle(
+          fontSize: 12,
+          color: latColor,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+
+    return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      leading: isSelected
+          ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
+          : const Icon(Icons.circle_outlined, size: 20, color: Colors.grey),
+      title: Text(
+        result.domain,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+          color: isSelected ? AppColors.primary : null,
+        ),
+      ),
+      trailing: trailing,
+      onTap: () {
+        ref.read(domainProvider.notifier).setDomain(result.domain);
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  Widget _buildCustomTile(String currentDomain, List<String> domains, bool isZh) {
+    final isCustom = !domains.contains(currentDomain);
+
+    return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      leading: isCustom
+          ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
+          : const Icon(Icons.edit_outlined, size: 20, color: Colors.grey),
+      title: Text(
+        isCustom ? currentDomain : (isZh ? '自定义域名...' : 'Custom domain...'),
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: isCustom ? FontWeight.w700 : FontWeight.normal,
+          color: isCustom ? AppColors.primary : Colors.grey,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 18),
+      onTap: () => _showCustomDomainDialog(context, ref),
+    );
+  }
+
   void _showCustomDomainDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController(); // Empty - don't show current domain
+    final controller = TextEditingController();
     final locale = Localizations.localeOf(context).languageCode;
     final isZh = locale == 'zh';
 

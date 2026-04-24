@@ -153,10 +153,10 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
   }
 }
 
-/// Provider
+/// Provider — 当 JWT 变化时自动重建（ref.watch）
 final prescriberProvider =
     StateNotifierProvider<PrescriberNotifier, PrescriberState>((ref) {
-  final aiService = ref.read(aiServiceProvider);
-  final api = ref.read(zlibraryApiProvider);
+  final aiService = ref.watch(aiServiceProvider);
+  final api = ref.watch(zlibraryApiProvider);
   return PrescriberNotifier(aiService, api);
 });

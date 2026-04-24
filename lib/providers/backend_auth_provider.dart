@@ -71,29 +71,70 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
     _init();
   }
 
-  /// 初始化：从 Hive 恢复已有 JWT
+  /// 初始化：从 Hive 恢复已有 JWT，然后主动向后端确认状态
   Future<void> _init() async {
     final box = HiveService.authBox;
     final jwt = box.get(_kJwt) as String?;
     final role = box.get(_kRole) as String?;
     final userId = box.get(_kUserId) as int?;
 
-    if (jwt != null && (role == 'authorized' || role == 'admin')) {
+    if (jwt == null) {
+      state = const BackendAuthState(status: BackendAuthStatus.unauthorized);
+      return;
+    }
+
+    // 有本地 JWT → 先设置为缓存的状态
+    if (role == 'authorized' || role == 'admin') {
       state = BackendAuthState(
         status: BackendAuthStatus.authorized,
         jwt: jwt,
         role: role,
         userId: userId,
       );
-    } else if (jwt != null) {
+    } else {
       state = BackendAuthState(
         status: BackendAuthStatus.unauthorized,
         jwt: jwt,
         role: role,
         userId: userId,
       );
-    } else {
-      state = const BackendAuthState(status: BackendAuthStatus.unauthorized);
+    }
+
+    // 后台异步向服务器确认最新状态（不阻塞 UI）
+    _refreshStatusFromServer(jwt);
+  }
+
+  /// 向后端确认 JWT 是否仍然有效
+  Future<void> _refreshStatusFromServer(String jwt) async {
+    try {
+      final data = await _api.checkStatus(jwt);
+      final serverStatus = data['status'] as String?;
+
+      if (serverStatus == 'authorized') {
+        final newToken = data['token'] as String? ?? jwt;
+        final userId = data['user_id'] as int?;
+        await _saveAuth(newToken, 'authorized', userId ?? state.userId);
+        if (mounted) {
+          state = BackendAuthState(
+            status: BackendAuthStatus.authorized,
+            jwt: newToken,
+            role: 'authorized',
+            userId: userId ?? state.userId,
+          );
+        }
+      } else {
+        // 服务器说未授权（可能 JWT 过期或被撤销）
+        if (mounted) {
+          state = BackendAuthState(
+            status: BackendAuthStatus.unauthorized,
+            jwt: jwt,
+            role: serverStatus,
+            userId: state.userId,
+          );
+        }
+      }
+    } catch (_) {
+      // 离线时保持本地缓存状态，不改变
     }
   }
 
@@ -106,7 +147,7 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
     final info = DeviceInfoPlugin();
     if (Platform.isAndroid) {
       final android = await info.androidInfo;
-      deviceId = android.id; // Android ID
+      deviceId = android.id;
     } else if (Platform.isIOS) {
       final ios = await info.iosInfo;
       deviceId = ios.identifierForVendor ?? 'ios_unknown';
@@ -129,21 +170,15 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
 
       await _saveAuth(jwt, role, userId);
 
-      if (role == 'authorized' || role == 'admin') {
-        state = BackendAuthState(
-          status: BackendAuthStatus.authorized,
-          jwt: jwt,
-          role: role,
-          userId: userId,
-        );
-      } else {
-        state = BackendAuthState(
-          status: BackendAuthStatus.unauthorized,
-          jwt: jwt,
-          role: role,
-          userId: userId,
-        );
-      }
+      final authorized = role == 'authorized' || role == 'admin';
+      state = BackendAuthState(
+        status: authorized
+            ? BackendAuthStatus.authorized
+            : BackendAuthStatus.unauthorized,
+        jwt: jwt,
+        role: role,
+        userId: userId,
+      );
     } catch (e) {
       state = BackendAuthState(
         status: BackendAuthStatus.unauthorized,
@@ -159,13 +194,15 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
 
     try {
       final data = await _api.getQrCode(state.jwt!);
-      final qrUrl = data['qr_url'] as String;
-      final expire = data['expire_seconds'] as int;
+      final qrUrl = data['qr_url'] as String? ?? '';
+      final expire = data['expire_seconds'] as int? ?? 300;
 
       if (qrUrl.isEmpty) {
-        // 已授权
+        // 后端说已授权，无需二维码
+        await _saveAuth(state.jwt!, 'authorized', state.userId);
         state = state.copyWith(
           status: BackendAuthStatus.authorized,
+          role: 'authorized',
         );
         return;
       }
@@ -190,9 +227,9 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
       await _checkStatus();
     });
 
-    // 5分钟超时自动停止
+    // 5 分钟超时自动停止
     Future.delayed(const Duration(minutes: 5), () {
-      if (state.isPolling && !state.isAuthorized) {
+      if (mounted && state.isPolling && !state.isAuthorized) {
         stopPolling();
         state = state.copyWith(error: '授权超时，请重新扫码');
       }
@@ -213,14 +250,14 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
     if (state.jwt == null) return;
     try {
       final data = await _api.checkStatus(state.jwt!);
-      final status = data['status'] as String;
+      final status = data['status'] as String?;
 
       if (status == 'authorized') {
-        final newToken = data['token'] as String?;
+        final newToken = data['token'] as String? ?? state.jwt!;
         final userId = data['user_id'] as int?;
 
-        if (newToken != null) {
-          await _saveAuth(newToken, 'authorized', userId ?? state.userId ?? 0);
+        await _saveAuth(newToken, 'authorized', userId ?? state.userId ?? 0);
+        if (mounted) {
           state = BackendAuthState(
             status: BackendAuthStatus.authorized,
             jwt: newToken,
@@ -243,7 +280,7 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
     if (userId != null) await box.put(_kUserId, userId);
   }
 
-  /// 登出
+  /// 登出 — 清除所有认证数据
   Future<void> logout() async {
     stopPolling();
     final box = HiveService.authBox;
