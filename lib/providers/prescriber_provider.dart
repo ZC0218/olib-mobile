@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/prescription.dart';
 import 'package:olib_api_plugin/olib_api_plugin.dart';
 import '../services/ai_service.dart';
+import '../utils/quota_phrases.dart';
 import 'zlibrary_provider.dart';
 import 'backend_auth_provider.dart';
 
@@ -15,17 +16,25 @@ final aiServiceProvider = Provider<AiService>((ref) {
 /// 诊断状态
 enum PrescriberStatus { idle, loading, done, error }
 
+/// 错误分类 — 给 UI 区分展示样式 / 是否提供重试入口
+/// - [generic]: 网络 / 服务器 / AI 偏差等真错误，需要展示 "寻书失败" 标题 + 重试
+/// - [quota]:  当日配额耗尽（含 AI 调用配额 / 全局预算），重试无意义，
+///             改用温和的文学化文案 + 隐藏重试按钮
+enum PrescriberErrorKind { generic, quota }
+
 /// 诊断器状态
 class PrescriberState {
   final PrescriberStatus status;
   final ReadingBag? result;
   final String? errorMessage;
+  final PrescriberErrorKind errorKind;
   final String? preferredFormat; // 用户首选格式：pdf / epub / mobi / null(不限)
 
   const PrescriberState({
     this.status = PrescriberStatus.idle,
     this.result,
     this.errorMessage,
+    this.errorKind = PrescriberErrorKind.generic,
     this.preferredFormat,
   });
 
@@ -33,6 +42,7 @@ class PrescriberState {
     PrescriberStatus? status,
     ReadingBag? result,
     String? errorMessage,
+    PrescriberErrorKind? errorKind,
     String? preferredFormat,
     bool clearResult = false,
     bool clearError = false,
@@ -41,6 +51,7 @@ class PrescriberState {
       status: status ?? this.status,
       result: clearResult ? null : (result ?? this.result),
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      errorKind: errorKind ?? this.errorKind,
       preferredFormat: preferredFormat ?? this.preferredFormat,
     );
   }
@@ -97,9 +108,23 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
     } catch (e) {
       if (gen != _generation || !mounted) return;
       if (e is DioException && CancelToken.isCancel(e)) return;
+      // AI 配额耗尽 → 切文学化文案 + errorKind=quota，UI 据此换样式
+      String message;
+      PrescriberErrorKind kind;
+      if (e is AiUserQuotaExceeded) {
+        message = QuotaPhrases.randomFrom(QuotaPhrases.aiQuota);
+        kind = PrescriberErrorKind.quota;
+      } else if (e is AiGlobalQuotaExceeded) {
+        message = QuotaPhrases.randomFrom(QuotaPhrases.aiGlobal);
+        kind = PrescriberErrorKind.quota;
+      } else {
+        message = _cleanError(e);
+        kind = PrescriberErrorKind.generic;
+      }
       state = PrescriberState(
         status: PrescriberStatus.error,
-        errorMessage: _cleanError(e),
+        errorMessage: message,
+        errorKind: kind,
         preferredFormat: state.preferredFormat,
       );
     }

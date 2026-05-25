@@ -391,6 +391,41 @@ class _ErrorBanner extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final cs = Theme.of(context).colorScheme;
+
+    // 配额耗尽 → 友好提示样式（无 "失败" 字样、无重试按钮）
+    if (state.errorKind == PrescriberErrorKind.quota) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.auto_stories_rounded, color: cs.primary, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  state.errorMessage!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.55,
+                    color: cs.onSurface,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 真错误 → 原有 "寻书失败" 样式 + 重试入口
     final canRetry = inputController.text.trim().isNotEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

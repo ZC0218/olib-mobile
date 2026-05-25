@@ -2,6 +2,22 @@ import 'package:dio/dio.dart';
 import '../models/prescription.dart';
 import '../config/env.dart';
 
+// ── 配额异常 — provider 据此挑文学化文案展示 ────────────────────────
+
+/// 后端返回 QUOTA_EXCEEDED_AI_USER：当日单用户 AI 调用次数耗尽。
+class AiUserQuotaExceeded implements Exception {
+  const AiUserQuotaExceeded();
+  @override
+  String toString() => 'AiUserQuotaExceeded';
+}
+
+/// 后端返回 QUOTA_EXCEEDED_AI_GLOBAL：全站当日 AI 预算熔断。
+class AiGlobalQuotaExceeded implements Exception {
+  const AiGlobalQuotaExceeded();
+  @override
+  String toString() => 'AiGlobalQuotaExceeded';
+}
+
 /// AI 服务抽象接口
 abstract class AiService {
   /// 生成阅读锦囊
@@ -96,6 +112,12 @@ class RemoteAiService implements AiService {
     if (e.response != null) {
       final data = e.response?.data;
       final code = e.response?.statusCode;
+      // 优先识别后端定义的 quota 错误码 → 返专用异常类型让 provider 切文学化文案
+      if (code == 429 && data is Map<String, dynamic>) {
+        final detail = data['detail'];
+        if (detail == 'QUOTA_EXCEEDED_AI_USER') return const AiUserQuotaExceeded();
+        if (detail == 'QUOTA_EXCEEDED_AI_GLOBAL') return const AiGlobalQuotaExceeded();
+      }
       if (data is Map<String, dynamic>) {
         final error = data['error'] ?? data['detail'] ?? data['message'];
         if (error is String) return Exception('$error${code != null ? " ($code)" : ""}');
