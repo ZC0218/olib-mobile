@@ -9,11 +9,15 @@ class AuthState {
   final User? user;
   final bool isLoading;
   final String? error;
+  /// True when auth init couldn't reach the current line (cf_blocked / network error).
+  /// User is treated as logged in via cached credentials, but UI should suggest switching.
+  final bool lineUnavailable;
 
   AuthState({
     this.user,
     this.isLoading = false,
     this.error,
+    this.lineUnavailable = false,
   });
 
   bool get isAuthenticated => user != null;
@@ -22,11 +26,13 @@ class AuthState {
     User? user,
     bool? isLoading,
     String? error,
+    bool? lineUnavailable,
   }) {
     return AuthState(
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
       error: error ?? this.error,
+      lineUnavailable: lineUnavailable ?? this.lineUnavailable,
     );
   }
 }
@@ -48,33 +54,59 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final userId = credentials['userId'];
       final userKey = credentials['userKey'];
 
-      if (userId != null && userKey != null) {
-        try {
-          final response = await _api.getProfile();
-          if (response.success && response.data != null) {
-            state = AuthState(user: response.data);
-          } else {
-            await _storage.clearCredentials();
-            state = AuthState();
-          }
-        } catch (e) {
-          final email = credentials['email'];
-          final name = credentials['name'];
-          final user = User(
+      if (userId == null || userKey == null) {
+        state = AuthState();
+        return;
+      }
+
+      // Build a fallback User from cached fields so we can stay logged in
+      // even when the current line is unreachable.
+      User cachedUser() => User(
             id: userId,
-            email: email ?? '',
-            name: name ?? 'User',
+            email: credentials['email'] ?? '',
+            name: credentials['name'] ?? 'User',
             remixUserkey: userKey,
           );
-          state = AuthState(user: user);
-          print('Profile verification failed, using cached credentials: $e');
+
+      try {
+        // Use loginWithToken — it sets remix_userid/remix_userkey cookies on
+        // Dio and hits /eapi/user/profile directly, so it works even on a
+        // fresh boot when the api's internal _loggedIn flag is still false.
+        final response = await _api.loginWithToken(userId, userKey);
+
+        if (response.success && response.data != null) {
+          state = AuthState(user: response.data);
+        } else if (response.error == 'cf_blocked' ||
+            _isTransientError(response.error)) {
+          // Line is unreachable — keep credentials, suggest switching.
+          state = AuthState(user: cachedUser(), lineUnavailable: true);
+        } else {
+          // Real auth failure (e.g. invalid token) — drop creds.
+          await _storage.clearCredentials();
+          state = AuthState();
         }
-      } else {
-        state = AuthState();
+      } catch (e) {
+        // Network exception — assume line issue, keep using cached creds.
+        state = AuthState(user: cachedUser(), lineUnavailable: true);
       }
     } catch (e) {
       state = AuthState(error: e.toString());
     }
+  }
+
+  /// Heuristic: treat connection/timeout errors as transient line problems,
+  /// not auth failures. We don't want to wipe credentials over a network blip.
+  bool _isTransientError(String? error) {
+    if (error == null) return false;
+    final e = error.toLowerCase();
+    return e.contains('timeout') ||
+        e.contains('socket') ||
+        e.contains('connection') ||
+        e.contains('network') ||
+        e.contains('handshake') ||
+        e.contains('unreachable') ||
+        e.contains('failed host lookup') ||
+        e.contains('request failed');
   }
 
   Future<bool> login(String email, String password) async {
@@ -171,6 +203,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
     } catch (e) {
       // Keep existing state on error
+    }
+  }
+
+  /// Re-verify the current line/credentials. Used after the user switches
+  /// network line to refresh the lineUnavailable flag and pick up real profile.
+  Future<void> reverify() async {
+    final credentials = await _storage.getCredentials();
+    final userId = credentials['userId'];
+    final userKey = credentials['userKey'];
+    if (userId == null || userKey == null) return;
+
+    try {
+      final response = await _api.loginWithToken(userId, userKey);
+      if (response.success && response.data != null) {
+        state = AuthState(user: response.data);
+      } else if (response.error == 'cf_blocked' ||
+          _isTransientError(response.error)) {
+        // Still unreachable — keep current user but mark line unavailable.
+        state = state.copyWith(lineUnavailable: true);
+      }
+      // Other errors: leave existing state alone; user can logout manually.
+    } catch (_) {
+      state = state.copyWith(lineUnavailable: true);
     }
   }
 

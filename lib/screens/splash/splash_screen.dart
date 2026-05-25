@@ -7,6 +7,7 @@ import '../../providers/domain_provider.dart';
 import '../../providers/speed_test_provider.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/domain_selector.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -125,19 +126,69 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   }
 
   Future<void> _initialize() async {
-    // Step 1: Check network
+    // Step 1: Check network on the current line
     setState(() => _statusText = 'Checking network...');
     _networkOk = await _checkNetwork();
-    
+
     if (!_networkOk) {
       setState(() => _statusText = 'Network unavailable, retrying...');
       await Future.delayed(const Duration(seconds: 2));
       _networkOk = await _checkNetwork();
     }
 
+    // Still unreachable — prompt user to switch line before continuing.
+    while (!_networkOk && mounted) {
+      final action = await _showLineUnavailableDialog();
+      if (!mounted) return;
+      if (action == _LineAction.proceed) break;
+      setState(() => _statusText = 'Checking network...');
+      _networkOk = await _checkNetwork();
+    }
+
     // Step 2: Wait for auth state
+    if (!mounted) return;
     setState(() => _statusText = 'Loading...');
     await _waitForAuth();
+  }
+
+  Future<_LineAction?> _showLineUnavailableDialog() async {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    return showDialog<_LineAction>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(isZh ? '线路不可用' : 'Line Unavailable'),
+        content: Text(
+          isZh
+              ? '当前线路无法连接到 Z-Library，请切换到其他线路后重试。'
+              : 'Current line cannot reach Z-Library. Please switch to another line and retry.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LineAction.proceed),
+            child: Text(isZh ? '仍然继续' : 'Continue anyway'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LineAction.retry),
+            child: Text(isZh ? '重试' : 'Retry'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              await showDialog(
+                context: ctx,
+                builder: (_) => const DomainSelectionDialog(),
+              );
+              if (ctx.mounted) Navigator.pop(ctx, _LineAction.retry);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(isZh ? '切换线路' : 'Switch Line'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _checkNetwork() async {
@@ -502,6 +553,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     );
   }
 }
+
+enum _LineAction { retry, proceed }
 
 // ════════════════════════════════════════════════════════════
 //  Custom Ring Spinner — elegant arc spinner

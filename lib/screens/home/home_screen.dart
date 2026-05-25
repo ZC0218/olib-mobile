@@ -10,6 +10,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/book_card.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/domain_selector.dart';
 import '../../routes/app_routes.dart';
 import '../../models/book.dart';
 import '../../l10n/app_localizations.dart';
@@ -218,9 +219,11 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
     final authState = ref.watch(authProvider);
     final user = authState.user;
     final theme = Theme.of(context);
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
 
     return Column(
       children: [
+        if (authState.lineUnavailable) _buildLineUnavailableBanner(context, isZh),
         // ========== 固定头部区域 ==========
         Container(
           decoration: BoxDecoration(
@@ -441,6 +444,59 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
           child: _buildBookGrid(ref.watch(recommendedBooksProvider)),
         ),
       ],
+    );
+  }
+
+  Widget _buildLineUnavailableBanner(BuildContext context, bool isZh) {
+    return Material(
+      color: Colors.orange.shade50,
+      child: InkWell(
+        // DomainNotifier.setDomain handles reverify + cache invalidation
+        // internally, so just opening the picker is enough.
+        onTap: () => showDialog(
+          context: context,
+          builder: (_) => const DomainSelectionDialog(),
+        ),
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off_outlined,
+                    color: Colors.orange.shade800, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isZh ? '当前线路不可用' : 'Current line unavailable',
+                        style: TextStyle(
+                          color: Colors.orange.shade900,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        isZh
+                            ? '已使用缓存登录信息，点此切换线路'
+                            : 'Using cached login. Tap to switch line.',
+                        style: TextStyle(
+                          color: Colors.orange.shade800,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right,
+                    color: Colors.orange.shade700, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
