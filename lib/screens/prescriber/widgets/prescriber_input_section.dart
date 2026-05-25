@@ -5,6 +5,24 @@ import '../../../providers/prescriber_provider.dart';
 import '../../../theme/app_colors.dart';
 import 'theme_card.dart';
 
+/// Per-theme short labels + accent color. Keeps the data model untouched and
+/// lives next to the card grid that consumes it.
+class _ThemeMeta {
+  final String shortZh;
+  final String shortEn;
+  final Color tint;
+  const _ThemeMeta(this.shortZh, this.shortEn, this.tint);
+}
+
+const Map<String, _ThemeMeta> _themeMetaById = {
+  'relax': _ThemeMeta('放松', 'Relax', AppColors.info),
+  'direction': _ThemeMeta('找方向', 'Direction', AppColors.primary),
+  'learn': _ThemeMeta('学习', 'Learn', AppColors.success),
+  'bedtime': _ThemeMeta('助眠', 'Sleep', Color(0xFF8B7AB8)),
+  'heal': _ThemeMeta('治愈', 'Heal', AppColors.accent),
+  'thinking': _ThemeMeta('思考', 'Think', AppColors.warning),
+};
+
 class PrescriberInputSection extends ConsumerWidget {
   final TextEditingController inputController;
   final VoidCallback onDiagnoseWithInput;
@@ -23,162 +41,381 @@ class PrescriberInputSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 12),
-            // 错误提示横条
-            _buildErrorBanner(context, ref),
-            // 顶部引导文案
-            Text(
-              isZh ? '选一个最近的状态' : 'Pick your current mood',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              isZh
-                  ? '我们会为你推荐最合适的书'
-                  : "We'll recommend the perfect books for you",
-              style: TextStyle(
-                fontSize: 14,
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // 格式筛选
-            _buildFormatPicker(context, ref),
-            const SizedBox(height: 16),
-
-            // 预设主题卡片
-            ..._buildThemeCards(),
-
-            const SizedBox(height: 28),
-
-            // 分隔线
-            Row(
-              children: [
-                Expanded(child: Divider(color: Colors.grey[300])),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    isZh ? '或者用自己的话描述' : 'Or describe in your own words',
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                Expanded(child: Divider(color: Colors.grey[300])),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // 自由输入框
-            TextField(
-              controller: inputController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: isZh
-                    ? '描述一下你最近的状态或困惑...'
-                    : 'Describe how you feel lately...',
-                hintStyle: TextStyle(color: Colors.grey[400]),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: Colors.grey[200]!),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: Colors.grey[200]!),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide:
-                      const BorderSide(color: AppColors.primary, width: 1.5),
-                ),
-                contentPadding: const EdgeInsets.all(16),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // 生成锦囊按钮
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: onDiagnoseWithInput,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 2,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.auto_awesome, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      isZh ? '生成锦囊' : 'Generate Reading Bag',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 40),
-          ],
-        ),
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      sliver: SliverList.list(
+        children: [
+          const SizedBox(height: 8),
+          _ErrorBanner(
+            isZh: isZh,
+            onRetry: onRetry,
+            inputController: inputController,
+          ),
+          _HeroCard(isZh: isZh),
+          const SizedBox(height: 24),
+          _ThemeGrid(isZh: isZh, onTap: onDiagnoseWithTheme),
+          const SizedBox(height: 28),
+          _OrDivider(label: isZh ? '或者自己描述' : 'Or describe it yourself'),
+          const SizedBox(height: 16),
+          _InputField(controller: inputController, isZh: isZh),
+          const SizedBox(height: 14),
+          _FormatPicker(isZh: isZh),
+          const SizedBox(height: 18),
+          _DiagnoseButton(
+            controller: inputController,
+            isZh: isZh,
+            onPressed: onDiagnoseWithInput,
+          ),
+          const SizedBox(height: 40),
+        ],
       ),
     );
   }
+}
 
-  Widget _buildErrorBanner(BuildContext context, WidgetRef ref) {
+// ─── Hero card ──────────────────────────────────────────────────────
+
+class _HeroCard extends StatelessWidget {
+  final bool isZh;
+
+  const _HeroCard({required this.isZh});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            cs.primary.withValues(alpha: isDark ? 0.32 : 0.18),
+            cs.secondary.withValues(alpha: isDark ? 0.22 : 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: cs.primary.withValues(alpha: isDark ? 0.35 : 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: cs.surface.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: cs.primary.withValues(alpha: 0.25),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Icon(Icons.auto_stories_rounded,
+                size: 28, color: cs.primary),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isZh ? 'AI 为你找一本书' : 'AI finds you a book',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: cs.onSurface,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isZh
+                      ? '选一个状态，或者说说你在想什么'
+                      : 'Pick a mood or tell us what you need',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: cs.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Theme grid ─────────────────────────────────────────────────────
+
+class _ThemeGrid extends StatelessWidget {
+  final bool isZh;
+  final void Function(String themeId) onTap;
+
+  const _ThemeGrid({required this.isZh, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: prescriberThemes.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.95,
+      ),
+      itemBuilder: (context, i) {
+        final theme = prescriberThemes[i];
+        final meta = _themeMetaById[theme.id] ??
+            const _ThemeMeta('', '', AppColors.primary);
+        return ThemeCard(
+          emoji: theme.emoji,
+          shortLabel: isZh ? meta.shortZh : meta.shortEn,
+          tooltip: isZh ? theme.labelZh : theme.labelEn,
+          tint: meta.tint,
+          onTap: () => onTap(theme.id),
+        );
+      },
+    );
+  }
+}
+
+// ─── "Or describe..." divider ──────────────────────────────────────
+
+class _OrDivider extends StatelessWidget {
+  final String label;
+
+  const _OrDivider({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(child: Divider(color: cs.outlineVariant)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: cs.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Expanded(child: Divider(color: cs.outlineVariant)),
+      ],
+    );
+  }
+}
+
+// ─── Input field ────────────────────────────────────────────────────
+
+class _InputField extends StatelessWidget {
+  final TextEditingController controller;
+  final bool isZh;
+
+  const _InputField({required this.controller, required this.isZh});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return TextField(
+      controller: controller,
+      maxLines: 3,
+      style: TextStyle(color: cs.onSurface, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: isZh
+            ? '描述一下你最近的状态或困惑…'
+            : 'Describe how you feel lately…',
+        hintStyle: TextStyle(
+          color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+          fontSize: 14,
+        ),
+        filled: true,
+        fillColor: cs.surfaceContainer,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: cs.outlineVariant),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: cs.outlineVariant),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: cs.primary, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.all(14),
+      ),
+    );
+  }
+}
+
+// ─── Format picker (dropdown) ───────────────────────────────────────
+
+/// 单行：标签居左，下拉胶囊居右。下拉项走系统 PopupMenu，长按/点击都行。
+class _FormatPicker extends ConsumerWidget {
+  final bool isZh;
+
+  const _FormatPicker({required this.isZh});
+
+  static const _formats = <_FormatOption>[
+    _FormatOption(value: null, zh: '不限', en: 'Any'),
+    _FormatOption(value: 'pdf', zh: 'PDF', en: 'PDF'),
+    _FormatOption(value: 'epub', zh: 'EPUB', en: 'EPUB'),
+    _FormatOption(value: 'mobi', zh: 'MOBI', en: 'MOBI'),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final currentFormat = ref.watch(prescriberProvider).preferredFormat;
+    final currentLabel = _formats
+        .firstWhere(
+          (o) => o.value == currentFormat,
+          orElse: () => _formats.first,
+        )
+        .labelFor(isZh);
+
+    return Row(
+      children: [
+        Icon(Icons.tune_rounded, size: 14, color: cs.onSurfaceVariant),
+        const SizedBox(width: 6),
+        Text(
+          isZh ? '偏好格式' : 'Format',
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        const Spacer(),
+        PopupMenuButton<String?>(
+          initialValue: currentFormat,
+          tooltip: isZh ? '选择格式' : 'Choose format',
+          position: PopupMenuPosition.under,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          onSelected: (fmt) {
+            ref.read(prescriberProvider.notifier).setFormat(fmt);
+          },
+          itemBuilder: (context) => _formats
+              .map(
+                (o) => PopupMenuItem<String?>(
+                  value: o.value,
+                  child: Row(
+                    children: [
+                      Text(
+                        o.labelFor(isZh),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: o.value == currentFormat
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: o.value == currentFormat
+                              ? cs.primary
+                              : cs.onSurface,
+                        ),
+                      ),
+                      if (o.value == currentFormat) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.check_rounded, size: 16, color: cs.primary),
+                      ],
+                    ],
+                  ),
+                ),
+              )
+              .toList(),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: cs.outlineVariant),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  currentLabel,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.arrow_drop_down_rounded,
+                    size: 18, color: cs.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FormatOption {
+  final String? value;
+  final String zh;
+  final String en;
+  const _FormatOption({required this.value, required this.zh, required this.en});
+
+  String labelFor(bool isZh) => isZh ? zh : en;
+}
+
+// ─── Error banner ───────────────────────────────────────────────────
+
+class _ErrorBanner extends ConsumerWidget {
+  final bool isZh;
+  final VoidCallback onRetry;
+  final TextEditingController inputController;
+
+  const _ErrorBanner({
+    required this.isZh,
+    required this.onRetry,
+    required this.inputController,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(prescriberProvider);
     if (state.status != PrescriberStatus.error || state.errorMessage == null) {
       return const SizedBox.shrink();
     }
+    final cs = Theme.of(context).colorScheme;
     final canRetry = inputController.text.trim().isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF3F0),
+          color: cs.errorContainer,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFFFCDC2)),
+          border: Border.all(color: cs.error.withValues(alpha: 0.3)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.error_outline_rounded,
-                color: Color(0xFFE65A3D), size: 20),
+            Icon(Icons.error_outline_rounded, color: cs.error, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isZh ? '生成失败' : 'Failed to generate',
-                    style: const TextStyle(
+                    isZh ? '寻书失败' : 'Failed to find',
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFFE65A3D),
+                      color: cs.onErrorContainer,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -187,7 +424,7 @@ class PrescriberInputSection extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.4,
-                      color: Theme.of(context).colorScheme.onSurface,
+                      color: cs.onErrorContainer.withValues(alpha: 0.85),
                     ),
                   ),
                 ],
@@ -197,7 +434,7 @@ class PrescriberInputSection extends ConsumerWidget {
               TextButton(
                 onPressed: onRetry,
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFE65A3D),
+                  foregroundColor: cs.error,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: const Size(0, 32),
                 ),
@@ -208,84 +445,62 @@ class PrescriberInputSection extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildFormatPicker(BuildContext context, WidgetRef ref) {
+// ─── "Find books" button ────────────────────────────────────────────
+
+class _DiagnoseButton extends StatelessWidget {
+  final TextEditingController controller;
+  final bool isZh;
+  final VoidCallback onPressed;
+
+  const _DiagnoseButton({
+    required this.controller,
+    required this.isZh,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final currentFormat = ref.watch(prescriberProvider).preferredFormat;
-    final formats = <String?>[null, 'pdf', 'epub', 'mobi'];
-    final labels = <String?>[isZh ? '不限' : 'Any', 'PDF', 'EPUB', 'MOBI'];
-
-    return Row(
-      children: [
-        Icon(Icons.filter_list_rounded, size: 16, color: cs.onSurfaceVariant),
-        const SizedBox(width: 6),
-        Text(
-          isZh ? '格式' : 'Format',
-          style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-        ),
-        const SizedBox(width: 10),
-        ...List.generate(formats.length, (i) {
-          final fmt = formats[i];
-          final selected = currentFormat == fmt;
-          return Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: ChoiceChip(
-              label: Text(
-                labels[i]!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: selected ? cs.onPrimary : cs.onSurfaceVariant,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                ),
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final enabled = controller.text.trim().isNotEmpty;
+        return SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton(
+            onPressed: enabled ? onPressed : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: cs.primary,
+              foregroundColor: cs.onPrimary,
+              disabledBackgroundColor:
+                  cs.onSurface.withValues(alpha: 0.12),
+              disabledForegroundColor:
+                  cs.onSurface.withValues(alpha: 0.38),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
               ),
-              selected: selected,
-              selectedColor: cs.primary,
-              backgroundColor: cs.surfaceContainerHighest,
-              side: BorderSide.none,
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              onSelected: (_) {
-                ref.read(prescriberProvider.notifier).setFormat(fmt);
-              },
+              elevation: enabled ? 2 : 0,
             ),
-          );
-        }),
-      ],
-    );
-  }
-
-  List<Widget> _buildThemeCards() {
-    final themes = prescriberThemes;
-    final List<Widget> rows = [];
-
-    for (int i = 0; i < themes.length; i += 2) {
-      final row = Row(
-        children: [
-          Expanded(
-            child: ThemeCard(
-              theme: themes[i],
-              isZh: isZh,
-              onTap: () => onDiagnoseWithTheme(themes[i].id),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.auto_awesome, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  isZh ? '开始寻书' : 'Find Books',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          if (i + 1 < themes.length)
-            Expanded(
-              child: ThemeCard(
-                theme: themes[i + 1],
-                isZh: isZh,
-                onTap: () => onDiagnoseWithTheme(themes[i + 1].id),
-              ),
-            )
-          else
-            const Expanded(child: SizedBox()),
-        ],
-      );
-      rows.add(row);
-      if (i + 2 < themes.length) {
-        rows.add(const SizedBox(height: 12));
-      }
-    }
-    return rows;
+        );
+      },
+    );
   }
 }

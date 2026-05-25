@@ -199,8 +199,8 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                         const SizedBox(height: 8),
                         Text(
                           isZh
-                              ? '关注公众号即可解锁 AI 智阅锦囊功能'
-                              : 'Follow our account to unlock AI features',
+                              ? '关注公众号即可解锁 AI 寻书功能'
+                              : 'Follow our account to unlock AI find-books',
                           style: TextStyle(
                             fontSize: 14,
                             color: Theme.of(context).colorScheme.onSurfaceVariant,

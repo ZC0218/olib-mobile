@@ -341,7 +341,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
 
                   const SizedBox(height: 16),
 
-                  // AI 智阅锦囊入口
+                  // 寻书入口（AI 推荐）
                   GestureDetector(
                     onTap: () => Navigator.of(context).pushNamed(AppRoutes.prescriber),
                     child: Container(
@@ -395,8 +395,8 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                                 const SizedBox(height: 1),
                                 Text(
                                   Localizations.localeOf(context).languageCode == 'zh'
-                                      ? '让 AI 帮你开锦囊 ✨'
-                                      : 'Let AI pick books for you ✨',
+                                      ? '让 AI 帮你寻书 ✨'
+                                      : 'Let AI find books for you ✨',
                                   style: TextStyle(
                                     color: Colors.white.withValues(alpha:0.85),
                                     fontSize: 12,

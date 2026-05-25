@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/prescription.dart';
 import '../../providers/prescriber_provider.dart';
 import '../../providers/backend_auth_provider.dart';
 import '../../routes/app_routes.dart';
-import '../../theme/app_colors.dart';
 import 'widgets/prescriber_input_section.dart';
 import 'widgets/prescriber_result_section.dart';
 
@@ -37,9 +37,14 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
       parent: _animController,
       curve: Curves.easeInOut,
     );
-    // 每次进入页面时重置状态，避免残留的 done 状态导致白屏
+    // 保留上次的结果：用户切走再回来仍能看到最近一次寻书的内容。
+    // 若处于 done 状态，把出场动画也补播一遍，避免淡入态停在中间。
     Future.microtask(() {
-      ref.read(prescriberProvider.notifier).reset();
+      if (!mounted) return;
+      final status = ref.read(prescriberProvider).status;
+      if (status == PrescriberStatus.done) {
+        _animController.value = 1.0;
+      }
     });
   }
 
@@ -114,6 +119,8 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
     final state = ref.watch(prescriberProvider);
     final locale = Localizations.localeOf(context).languageCode;
     final isZh = locale == 'zh';
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       body: Container(
@@ -122,8 +129,9 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              AppColors.primary.withValues(alpha: 0.08),
-              Colors.white,
+              theme.colorScheme.primary
+                  .withValues(alpha: isDark ? 0.12 : 0.08),
+              theme.scaffoldBackgroundColor,
             ],
           ),
         ),
@@ -141,7 +149,7 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
                   onPressed: () => Navigator.pop(context),
                 ),
                 title: Text(
-                  isZh ? '✨ AI 智阅锦囊' : '✨ AI Reading Bag',
+                  isZh ? '✨ 寻书' : '✨ Find Books',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
                     fontWeight: FontWeight.bold,
@@ -152,10 +160,10 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
                 actions: [
                   if (state.status == PrescriberStatus.done)
                     IconButton(
-                      icon: const Icon(Icons.refresh_rounded,
-                          color: AppColors.primary),
+                      icon: Icon(Icons.refresh_rounded,
+                          color: theme.colorScheme.primary),
                       onPressed: _reset,
-                      tooltip: isZh ? '重新开始' : 'Start Over',
+                      tooltip: isZh ? '再寻一次' : 'Try again',
                     ),
                 ],
               ),
@@ -172,7 +180,10 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
                 ),
 
               if (state.status == PrescriberStatus.loading)
-                _buildLoadingSection(isZh),
+                _LoadingSection(
+                  isZh: isZh,
+                  rotationController: _loadingController,
+                ),
 
               if (state.status == PrescriberStatus.done &&
                   state.result != null)
@@ -190,55 +201,139 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
     );
   }
 
-  // ==================== 加载阶段 ====================
-  Widget _buildLoadingSection(bool isZh) {
+}
+
+// ════════════════════════════════════════════════════════════
+//  Loading section — rotating reassurance copy
+// ════════════════════════════════════════════════════════════
+
+/// 加载态：图标持续旋转 + 文案每 2.5s 轮播，缓解 AI 生成 5-15 秒的焦虑。
+class _LoadingSection extends StatefulWidget {
+  final bool isZh;
+  final AnimationController rotationController;
+
+  const _LoadingSection({
+    required this.isZh,
+    required this.rotationController,
+  });
+
+  @override
+  State<_LoadingSection> createState() => _LoadingSectionState();
+}
+
+class _LoadingSectionState extends State<_LoadingSection> {
+  static const List<String> _messagesZh = [
+    '正在翻阅书海...',
+    '匹配你的心境...',
+    '整理推荐理由...',
+    '快好了，再等等...',
+  ];
+
+  static const List<String> _messagesEn = [
+    'Browsing the bookshelves...',
+    'Matching your mood...',
+    'Drafting reasons...',
+    'Almost there...',
+  ];
+
+  int _index = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (!mounted) return;
+      setState(() {
+        _index = (_index + 1) % _messages.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  List<String> get _messages => widget.isZh ? _messagesZh : _messagesEn;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return SliverFillRemaining(
       hasScrollBody: false,
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 动画图标 — 持续旋转
+            // 旋转图标
             RotationTransition(
-              turns: _loadingController,
+              turns: widget.rotationController,
               child: Container(
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
+                  color: cs.primary.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.auto_awesome,
                   size: 36,
-                  color: AppColors.primary,
+                  color: cs.primary,
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
+
+            // 主文案
             Text(
-              isZh ? '正在为你挑选好书...' : 'AI is picking books for you...',
+              widget.isZh ? '正在为你寻书' : 'Finding books for you',
               style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              isZh ? '请稍候片刻' : 'Please wait a moment',
-              style: TextStyle(
-                fontSize: 14,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+            const SizedBox(height: 10),
+
+            // 轮播副文案 — AnimatedSwitcher 淡入淡出
+            SizedBox(
+              height: 22,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 450),
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.3),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: Text(
+                  _messages[_index],
+                  key: ValueKey(_index),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
-            const SizedBox(
+
+            const SizedBox(height: 20),
+
+            // 进度条
+            SizedBox(
               width: 24,
               height: 24,
               child: CircularProgressIndicator(
                 strokeWidth: 2.5,
-                color: AppColors.primary,
+                color: cs.primary,
               ),
             ),
           ],
