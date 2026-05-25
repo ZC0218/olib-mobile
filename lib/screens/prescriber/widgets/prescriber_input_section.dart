@@ -23,6 +23,7 @@ class PrescriberInputSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -35,10 +36,10 @@ class PrescriberInputSection extends ConsumerWidget {
             // 顶部引导文案
             Text(
               isZh ? '选一个最近的状态' : 'Pick your current mood',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+                color: cs.onSurface,
               ),
             ),
             const SizedBox(height: 4),
@@ -48,13 +49,13 @@ class PrescriberInputSection extends ConsumerWidget {
                   : "We'll recommend the perfect books for you",
               style: TextStyle(
                 fontSize: 14,
-                color: AppColors.textSecondary,
+                color: cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 20),
 
             // 格式筛选
-            _buildFormatPicker(ref),
+            _buildFormatPicker(context, ref),
             const SizedBox(height: 16),
 
             // 预设主题卡片
@@ -71,7 +72,7 @@ class PrescriberInputSection extends ConsumerWidget {
                   child: Text(
                     isZh ? '或者用自己的话描述' : 'Or describe in your own words',
                     style: TextStyle(
-                      color: AppColors.textSecondary,
+                      color: cs.onSurfaceVariant,
                       fontSize: 13,
                     ),
                   ),
@@ -183,10 +184,10 @@ class PrescriberInputSection extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Text(
                     state.errorMessage!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       height: 1.4,
-                      color: AppColors.textPrimary,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ],
@@ -208,19 +209,19 @@ class PrescriberInputSection extends ConsumerWidget {
     );
   }
 
-  Widget _buildFormatPicker(WidgetRef ref) {
+  Widget _buildFormatPicker(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     final currentFormat = ref.watch(prescriberProvider).preferredFormat;
     final formats = <String?>[null, 'pdf', 'epub', 'mobi'];
     final labels = <String?>[isZh ? '不限' : 'Any', 'PDF', 'EPUB', 'MOBI'];
 
     return Row(
       children: [
-        Icon(Icons.filter_list_rounded,
-            size: 16, color: AppColors.textSecondary),
+        Icon(Icons.filter_list_rounded, size: 16, color: cs.onSurfaceVariant),
         const SizedBox(width: 6),
         Text(
           isZh ? '格式' : 'Format',
-          style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
         ),
         const SizedBox(width: 10),
         ...List.generate(formats.length, (i) {
@@ -233,13 +234,13 @@ class PrescriberInputSection extends ConsumerWidget {
                 labels[i]!,
                 style: TextStyle(
                   fontSize: 12,
-                  color: selected ? Colors.white : AppColors.textSecondary,
+                  color: selected ? cs.onPrimary : cs.onSurfaceVariant,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
               selected: selected,
-              selectedColor: AppColors.primary,
-              backgroundColor: Colors.grey[100],
+              selectedColor: cs.primary,
+              backgroundColor: cs.surfaceContainerHighest,
               side: BorderSide.none,
               visualDensity: VisualDensity.compact,
               padding: const EdgeInsets.symmetric(horizontal: 4),

@@ -20,6 +20,7 @@ class PrescriberResultSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return SliverToBoxAdapter(
       child: FadeTransition(
         opacity: fadeAnimation,
@@ -33,7 +34,7 @@ class PrescriberResultSection extends StatelessWidget {
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: cs.surface,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
@@ -101,10 +102,10 @@ class PrescriberResultSection extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 bag.diagnosis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   height: 1.6,
-                                  color: AppColors.textPrimary,
+                                  color: cs.onSurface,
                                 ),
                               ),
                             ),
@@ -117,7 +118,7 @@ class PrescriberResultSection extends StatelessWidget {
                     ...bag.tips.asMap().entries.map((entry) {
                       final index = entry.key;
                       final tip = entry.value;
-                      return _buildBookTip(tip, index + 1);
+                      return _buildBookTip(context, tip, index + 1);
                     }),
 
                     const SizedBox(height: 20),
@@ -133,7 +134,7 @@ class PrescriberResultSection extends StatelessWidget {
                 icon: const Icon(Icons.refresh_rounded),
                 label: Text(isZh ? '重新开始' : 'Start Over'),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
+                  foregroundColor: cs.onSurfaceVariant,
                 ),
               ),
 
@@ -145,7 +146,8 @@ class PrescriberResultSection extends StatelessWidget {
     );
   }
 
-  Widget _buildBookTip(ReadingTip tip, int index) {
+  Widget _buildBookTip(BuildContext context, ReadingTip tip, int index) {
+    final cs = Theme.of(context).colorScheme;
     final dosages = ['第一味', '第二味', '第三味'];
     final dosagesEn = ['First', 'Second', 'Third'];
     final doseLabel = isZh
@@ -159,9 +161,9 @@ class PrescriberResultSection extends StatelessWidget {
         child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.grey[50],
+          color: cs.surfaceContainerLow,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey[200]!),
+          border: Border.all(color: cs.outlineVariant),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,10 +211,10 @@ class PrescriberResultSection extends StatelessWidget {
             // 书名 + 作者
             Text(
               '📖 ${tip.bookName}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: cs.onSurface,
               ),
             ),
             const SizedBox(height: 2),
@@ -220,7 +222,7 @@ class PrescriberResultSection extends StatelessWidget {
               tip.author,
               style: TextStyle(
                 fontSize: 13,
-                color: AppColors.textSecondary,
+                color: cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 10),
@@ -231,7 +233,7 @@ class PrescriberResultSection extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
-                color: AppColors.textSecondary,
+                color: cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 14),
@@ -265,11 +267,11 @@ class PrescriberResultSection extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: tip.matchedBook != null
                             ? AppColors.primary
-                            : AppColors.textSecondary,
+                            : cs.onSurfaceVariant,
                         side: BorderSide(
                           color: tip.matchedBook != null
                               ? AppColors.primary
-                              : Colors.grey[300]!,
+                              : cs.outlineVariant,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),

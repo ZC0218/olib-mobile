@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/settings_provider.dart';
-import '../../../theme/app_colors.dart';
 import '../../../l10n/app_localizations.dart';
 import 'section_header.dart';
 import 'settings_card.dart';
@@ -15,6 +14,7 @@ class ThemeSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
     final t = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,13 +60,13 @@ class ThemeSection extends ConsumerWidget {
                   ),
                   foregroundColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.selected)) {
-                      return Colors.white;
+                      return cs.onPrimary;
                     }
-                    return AppColors.textSecondary;
+                    return cs.onSurfaceVariant;
                   }),
                   backgroundColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.selected)) {
-                      return AppColors.primary;
+                      return cs.primary;
                     }
                     return Colors.transparent;
                   }),

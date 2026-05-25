@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../models/user.dart';
-import '../../../theme/app_colors.dart';
 import '../../../l10n/app_localizations.dart';
 
 /// Horizontal hero card showing the signed-in user.
@@ -13,6 +12,8 @@ class UserProfileSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -20,13 +21,13 @@ class UserProfileSection extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.primary.withValues(alpha: 0.08),
-            AppColors.accent.withValues(alpha: 0.06),
+            cs.primary.withValues(alpha: isDark ? 0.18 : 0.08),
+            cs.secondary.withValues(alpha: isDark ? 0.14 : 0.06),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.12),
+          color: cs.primary.withValues(alpha: isDark ? 0.25 : 0.12),
         ),
       ),
       child: Column(
@@ -46,6 +47,7 @@ class UserProfileSection extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
+                        color: cs.onSurface,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -54,7 +56,7 @@ class UserProfileSection extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textSecondary,
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -80,6 +82,7 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
     return Container(
       width: 60,
@@ -89,11 +92,11 @@ class _Avatar extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.75)],
+          colors: [cs.primary, cs.primary.withValues(alpha: 0.75)],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.25),
+            color: cs.primary.withValues(alpha: 0.25),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -102,10 +105,10 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       child: Text(
         initial,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 26,
           fontWeight: FontWeight.w700,
-          color: Colors.white,
+          color: cs.onPrimary,
         ),
       ),
     );
@@ -120,24 +123,25 @@ class _DownloadsChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.12),
+        color: cs.secondary.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.download_for_offline_outlined,
-              size: 14, color: AppColors.accent),
+              size: 14, color: cs.secondary),
           const SizedBox(width: 6),
           Text(
             '$count · $label',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppColors.accent,
+              color: cs.secondary,
             ),
           ),
         ],

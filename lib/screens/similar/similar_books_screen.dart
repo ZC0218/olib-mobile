@@ -149,7 +149,7 @@ class _SimilarBooksScreenState extends ConsumerState<SimilarBooksScreen> {
                                     Text(
                                       '${_books.length} ${l10n.get('books_found')}',
                                       style: TextStyle(
-                                        color: AppColors.textSecondary,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         fontSize: 13,
                                       ),
                                     ),

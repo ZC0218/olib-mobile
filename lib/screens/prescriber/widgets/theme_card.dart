@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../models/prescription.dart';
-import '../../../theme/app_colors.dart';
 
 class ThemeCard extends StatelessWidget {
   final PrescriberTheme theme;
@@ -16,14 +15,15 @@ class ThemeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cs.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey[200]!),
+          border: Border.all(color: cs.outlineVariant),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.03),
@@ -39,10 +39,10 @@ class ThemeCard extends StatelessWidget {
             Expanded(
               child: Text(
                 isZh ? theme.labelZh : theme.labelEn,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.textPrimary,
+                  color: cs.onSurface,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

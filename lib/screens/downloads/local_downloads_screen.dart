@@ -16,6 +16,7 @@ class LocalDownloadsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // 2 Tabs: Ongoing (Downloading) / Completed
     return DefaultTabController(
@@ -25,7 +26,10 @@ class LocalDownloadsScreen extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           elevation: 0,
-          title: Text(AppLocalizations.of(context).get('downloads'), style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+          title: Text(
+            AppLocalizations.of(context).get('downloads'),
+            style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.bold),
+          ),
           centerTitle: true,
           actions: [
             IconButton(
@@ -78,7 +82,7 @@ class LocalDownloadsScreen extends ConsumerWidget {
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 labelColor: Colors.white,
-                unselectedLabelColor: AppColors.textSecondary,
+                unselectedLabelColor: cs.onSurfaceVariant,
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 dividerColor: Colors.transparent,
                 tabs: [
@@ -230,18 +234,18 @@ class _DownloadItem extends ConsumerWidget {
                       task.book.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
-                        color: AppColors.textPrimary,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       task.book.author ?? AppLocalizations.of(context).get('unknown_author') ?? 'Unknown',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.textSecondary,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -262,7 +266,10 @@ class _DownloadItem extends ConsumerWidget {
                       const SizedBox(height: 4),
                       Text(
                         '${(task.progress * 100).toInt()}% • ${AppLocalizations.of(context).get('downloading')}',
-                        style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ] else if (isError) ...[
                       Text(
@@ -290,13 +297,19 @@ class _DownloadItem extends ConsumerWidget {
               // Actions
               if (isDownloading)
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   onPressed: () => ref.read(downloadProvider.notifier).cancelDownload(task.id),
                 ),
-                
+
               if (!isDownloading)
                 PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded, color: AppColors.textSecondary),
+                  icon: Icon(
+                    Icons.more_vert_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   onSelected: (value) => _handleMenuAction(context, ref, value),
                   itemBuilder: (context) => [
                     if (isCompleted && task.filePath != null) ...[

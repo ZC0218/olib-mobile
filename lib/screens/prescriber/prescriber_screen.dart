@@ -136,14 +136,14 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
                 backgroundColor: Colors.transparent,
                 elevation: 0,
                 leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                      color: AppColors.textPrimary),
+                  icon: Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Theme.of(context).colorScheme.onSurface),
                   onPressed: () => Navigator.pop(context),
                 ),
                 title: Text(
                   isZh ? '✨ AI 智阅锦囊' : '✨ AI Reading Bag',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontWeight: FontWeight.bold,
                     fontSize: 20,
                   ),
@@ -218,10 +218,10 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
             const SizedBox(height: 24),
             Text(
               isZh ? '正在为你挑选好书...' : 'AI is picking books for you...',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: AppColors.textPrimary,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
@@ -229,7 +229,7 @@ class _PrescriberScreenState extends ConsumerState<PrescriberScreen>
               isZh ? '请稍候片刻' : 'Please wait a moment',
               style: TextStyle(
                 fontSize: 14,
-                color: AppColors.textSecondary,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),

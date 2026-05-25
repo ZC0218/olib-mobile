@@ -47,7 +47,7 @@ class BookInfoSection extends StatelessWidget {
                     book.series!,
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? Colors.white54 : AppColors.textSecondary,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -60,7 +60,7 @@ class BookInfoSection extends StatelessWidget {
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   height: 1.3,
-                  color: isDark ? Colors.white : AppColors.textPrimary,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
 
@@ -90,7 +90,7 @@ class BookInfoSection extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : AppColors.textPrimary,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -99,7 +99,7 @@ class BookInfoSection extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 14,
                     height: 1.6,
-                    color: isDark ? Colors.white70 : AppColors.textSecondary,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -124,6 +124,7 @@ class BookInfoSection extends StatelessWidget {
     // Format
     if (book.extension != null && book.extension!.isNotEmpty) {
       capsules.add(_capsule(
+        context,
         Icons.description_outlined,
         book.extension!.toUpperCase(),
         highlight: true,
@@ -132,22 +133,22 @@ class BookInfoSection extends StatelessWidget {
 
     // File size
     if (book.filesizeString != null && book.filesizeString!.isNotEmpty) {
-      capsules.add(_capsule(Icons.storage_outlined, book.filesizeString!));
+      capsules.add(_capsule(context, Icons.storage_outlined, book.filesizeString!));
     }
 
     // Year
     if (book.year != null && book.year != 0) {
-      capsules.add(_capsule(Icons.calendar_today_outlined, '${book.year}'));
+      capsules.add(_capsule(context, Icons.calendar_today_outlined, '${book.year}'));
     }
 
     // Publisher
     if (book.publisher != null && book.publisher!.isNotEmpty) {
-      capsules.add(_capsule(Icons.business_outlined, book.publisher!));
+      capsules.add(_capsule(context, Icons.business_outlined, book.publisher!));
     }
 
     // Pages — hide if 0 or null
     if (book.pages != null && book.pages != 0) {
-      capsules.add(_capsule(Icons.auto_stories_outlined, '${book.pages} p'));
+      capsules.add(_capsule(context, Icons.auto_stories_outlined, '${book.pages} p'));
     }
 
     // Language tag
@@ -164,13 +165,12 @@ class BookInfoSection extends StatelessWidget {
     );
   }
 
-  Widget _capsule(IconData icon, String text, {bool highlight = false}) {
+  Widget _capsule(BuildContext context, IconData icon, String text, {bool highlight = false}) {
+    final cs = Theme.of(context).colorScheme;
     final bgColor = highlight
         ? AppColors.primary.withValues(alpha: 0.12)
-        : (isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF0F2F5));
-    final fgColor = highlight
-        ? AppColors.primary
-        : (isDark ? Colors.white70 : AppColors.textSecondary);
+        : cs.surfaceContainerHighest;
+    final fgColor = highlight ? AppColors.primary : cs.onSurfaceVariant;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -272,7 +272,7 @@ class BookInfoSection extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : AppColors.textPrimary,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -280,7 +280,7 @@ class BookInfoSection extends StatelessWidget {
                     isDark ? 'Discover more like this' : '发现更多类似书籍',
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? Colors.white38 : AppColors.textSecondary,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -288,7 +288,7 @@ class BookInfoSection extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: isDark ? Colors.white38 : AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
             ),
           ],
         ),

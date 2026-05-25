@@ -81,7 +81,8 @@ class _LineStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (statusText, statusColor) = _statusFor(latency, testing, isZh);
+    final cs = Theme.of(context).colorScheme;
+    final (statusText, statusColor) = _statusFor(latency, testing, isZh, cs);
 
     return Padding(
       padding: const EdgeInsets.only(top: 2),
@@ -89,9 +90,9 @@ class _LineStatus extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+              color: cs.onSurface,
               fontSize: 13,
             ),
           ),
@@ -118,11 +119,12 @@ class _LineStatus extends StatelessWidget {
     );
   }
 
-  (String, Color) _statusFor(int? latency, bool testing, bool isZh) {
+  (String, Color) _statusFor(
+      int? latency, bool testing, bool isZh, ColorScheme cs) {
     if (latency == null) {
       return (
         testing ? (isZh ? '测速中' : 'Testing') : (isZh ? '未测速' : 'Untested'),
-        AppColors.textTertiary,
+        cs.onSurfaceVariant,
       );
     }
     if (latency < 0) {

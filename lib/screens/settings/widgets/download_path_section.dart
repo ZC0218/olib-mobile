@@ -205,8 +205,9 @@ class DownloadPathSection extends ConsumerWidget {
                         },
                       ),
                       ListTile(
-                        leading: const Icon(
-                            Icons.restore, color: AppColors.textSecondary),
+                        leading: Icon(
+                            Icons.restore,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant),
                         title: Text(isZh ? '恢复默认' : 'Reset to Default'),
                         subtitle: Text(isZh
                             ? '使用应用默认文档目录'

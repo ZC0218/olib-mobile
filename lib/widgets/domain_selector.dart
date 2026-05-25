@@ -26,7 +26,7 @@ class DomainSelector extends ConsumerWidget {
     if (compact) {
       return IconButton(
         icon: const Icon(Icons.dns_outlined),
-        color: color ?? AppColors.textPrimary,
+        color: color ?? Theme.of(context).colorScheme.onSurface,
         tooltip: 'Switch Network ($label)',
         onPressed: () => _showDialog(context),
       );

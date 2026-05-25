@@ -255,6 +255,7 @@ class _SharePreviewSheetState extends State<SharePreviewSheet> {
     required String tooltip,
     required VoidCallback onTap,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -265,11 +266,9 @@ class _SharePreviewSheetState extends State<SharePreviewSheet> {
           height: 48,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.textSecondary.withValues(alpha: 0.3),
-            ),
+            border: Border.all(color: cs.outlineVariant),
           ),
-          child: Icon(icon, size: 20, color: AppColors.textSecondary),
+          child: Icon(icon, size: 20, color: cs.onSurfaceVariant),
         ),
       ),
     );
@@ -277,20 +276,21 @@ class _SharePreviewSheetState extends State<SharePreviewSheet> {
 
   Widget _buildStyleChip(String label, ShareStyle style) {
     final isSelected = style == _selectedStyle;
+    final cs = Theme.of(context).colorScheme;
     return ChoiceChip(
       label: Text(label),
       selected: isSelected,
       onSelected: (_) => setState(() => _selectedStyle = style),
       selectedColor: AppColors.primary.withValues(alpha:0.2),
       labelStyle: TextStyle(
-        color: isSelected ? AppColors.primary : AppColors.textSecondary,
+        color: isSelected ? AppColors.primary : cs.onSurfaceVariant,
         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
       ),
       backgroundColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(
-          color: isSelected ? AppColors.primary : Colors.grey[300]!,
+          color: isSelected ? AppColors.primary : cs.outlineVariant,
         ),
       ),
     );

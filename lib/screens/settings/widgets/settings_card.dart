@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../theme/app_colors.dart';
 
 /// Flat, bordered card used as the visual container for every settings group.
 /// Overrides the app's default Card style (elevation + horizontal margin) so
@@ -16,18 +15,15 @@ class SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : AppColors.divider;
+    final cs = Theme.of(context).colorScheme;
 
     return Material(
-      color: Theme.of(context).colorScheme.surface,
+      color: cs.surface,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderColor, width: 1),
+          border: Border.all(color: cs.outlineVariant, width: 1),
         ),
         padding: padding,
         child: ClipRRect(
@@ -46,15 +42,13 @@ class SettingsDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cs = Theme.of(context).colorScheme;
     return Divider(
       height: 1,
       thickness: 1,
       indent: 56,
       endIndent: 0,
-      color: isDark
-          ? Colors.white.withValues(alpha: 0.06)
-          : AppColors.divider,
+      color: cs.outlineVariant,
     );
   }
 }

@@ -35,12 +35,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       extendBodyBehindAppBar: true,
       body: _screens[_selectedIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: cs.surface,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha:0.05),
@@ -52,10 +53,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: BottomNavigationBar(
           currentIndex: _selectedIndex,
           elevation: 0,
-          backgroundColor: Theme.of(context).colorScheme.surface,
+          backgroundColor: cs.surface,
           type: BottomNavigationBarType.fixed,
-          selectedItemColor: AppColors.primary,
-          unselectedItemColor: AppColors.textSecondary,
+          selectedItemColor: cs.primary,
+          unselectedItemColor: cs.onSurfaceVariant,
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 12),
           showUnselectedLabels: true,
@@ -219,6 +220,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
     final authState = ref.watch(authProvider);
     final user = authState.user;
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final isZh = Localizations.localeOf(context).languageCode == 'zh';
 
     return Column(
@@ -253,7 +255,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                           Text(
                             _getGreeting(context),
                             style: theme.textTheme.bodyLarge?.copyWith(
-                              color: AppColors.textSecondary,
+                              color: cs.onSurfaceVariant,
                               fontSize: 16,
                             ),
                           ),
@@ -261,7 +263,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                           Text(
                             user?.name ?? "Book Lover",
                             style: theme.textTheme.displaySmall?.copyWith(
-                              color: AppColors.textPrimary,
+                              color: cs.onSurface,
                               fontWeight: FontWeight.bold,
                               fontSize: 28,
                             ),
@@ -270,7 +272,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                       ),
                       Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
+                          color: cs.surface,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
@@ -285,7 +287,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                           onPressed: () {
                             Navigator.of(context).pushNamed(AppRoutes.settings);
                           },
-                          color: AppColors.textPrimary,
+                          color: cs.onSurface,
                         ),
                       ),
                     ],
@@ -300,7 +302,7 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                       height: 54,
                       padding: const EdgeInsets.only(left: 20, right: 8),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
+                        color: cs.surface,
                         borderRadius: BorderRadius.circular(30),
                         boxShadow: [
                           BoxShadow(
@@ -312,13 +314,13 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.search, color: AppColors.textSecondary),
+                          Icon(Icons.search, color: cs.onSurfaceVariant),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               AppLocalizations.of(context).get('search_for_books'),
                               style: TextStyle(
-                                color: Colors.grey[400],
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                                 fontSize: 16,
                               ),
                             ),
@@ -425,10 +427,10 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
                         Localizations.localeOf(context).languageCode == 'zh'
                             ? '为你推荐'
                             : 'Recommended',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
+                          color: cs.onSurface,
                         ),
                       ),
                     ],

@@ -15,6 +15,7 @@ class BookListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -23,12 +24,12 @@ class BookListTile extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha:0.1),
+            color: cs.primary.withValues(alpha:0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.menu_book_rounded,
-            color: AppColors.primary,
+            color: cs.primary,
             size: 22,
           ),
         ),
@@ -77,7 +78,7 @@ class BookListTile extends StatelessWidget {
                   Text(
                     book.filesizeString!,
                     style: TextStyle(
-                      color: AppColors.textSecondary,
+                      color: cs.onSurfaceVariant,
                       fontSize: 11,
                     ),
                   ),
@@ -87,7 +88,7 @@ class BookListTile extends StatelessWidget {
                   Text(
                     '${book.year}',
                     style: TextStyle(
-                      color: AppColors.textSecondary,
+                      color: cs.onSurfaceVariant,
                       fontSize: 11,
                     ),
                   ),
@@ -95,7 +96,7 @@ class BookListTile extends StatelessWidget {
             ),
           ],
         ),
-        trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+        trailing: Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
         onTap: onTap,
       ),
     );

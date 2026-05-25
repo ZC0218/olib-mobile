@@ -177,7 +177,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           Text(
             l.get('books_count').replaceAll('%d', '$count'),
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -189,7 +189,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
               color: Theme.of(context).cardTheme.color,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: AppColors.textSecondary.withValues(alpha:0.15),
+                color: Theme.of(context).colorScheme.outlineVariant,
               ),
             ),
             child: Row(
@@ -235,7 +235,9 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           child: Icon(
             icon,
             size: 20,
-            color: selected ? AppColors.primary : AppColors.textSecondary,
+            color: selected
+                ? AppColors.primary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
       ),
@@ -288,8 +290,10 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                           border: Border.all(
                             color: isSelected
                                 ? AppColors.primary
-                                : AppColors.textSecondary
-                                    .withValues(alpha: 0.3),
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant
+                                    .withValues(alpha: 0.4),
                             width: 2,
                           ),
                           boxShadow: [
@@ -388,7 +392,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           Text(
             l.get('save_books_hint'),
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 14,
             ),
           ),
@@ -411,7 +415,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         color: Theme.of(context).scaffoldBackgroundColor,
         border: Border(
           top: BorderSide(
-            color: AppColors.textSecondary.withValues(alpha:0.1),
+            color: Theme.of(context).colorScheme.outlineVariant,
           ),
         ),
       ),

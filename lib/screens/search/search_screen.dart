@@ -179,7 +179,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                     Text(
                                       '${searchState.books.length} ${l10n.get('books_found')}',
                                       style: TextStyle(
-                                        color: AppColors.textSecondary,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -188,7 +188,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                         Text(
                                           ' ${searchState.currentPage} / ${searchState.totalPages}${l10n.get('page')}',
                                           style: TextStyle(
-                                            color: AppColors.textSecondary,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                                             fontSize: 13,
                                           ),
                                         ),

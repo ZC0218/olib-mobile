@@ -184,12 +184,13 @@ class _BookCardState extends State<BookCard> with SingleTickerProviderStateMixin
   Widget _buildMetaRow() {
     final hasExtension = widget.book.extension != null && widget.book.extension!.isNotEmpty;
     final hasYear = widget.book.year != null && widget.book.year != 0;
-    
+
     if (!hasExtension && !hasYear) {
       // Return a minimal spacer if no meta info available
       return const SizedBox(height: 12);
     }
-    
+
+    final cs = Theme.of(context).colorScheme;
     return Row(
       children: [
         if (hasExtension)
@@ -207,25 +208,26 @@ class _BookCardState extends State<BookCard> with SingleTickerProviderStateMixin
         if (hasYear)
           Text(
             hasExtension ? '• ${widget.book.year}' : '${widget.book.year}',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: cs.onSurfaceVariant,
               fontSize: 10,
             ),
           ),
       ],
     );
   }
-  
+
   /// Build the bottom row (rating + filesize)
   Widget _buildBottomRow() {
     final hasScore = widget.book.interestScore != null && widget.book.interestScore!.isNotEmpty;
     final hasSize = widget.book.filesizeString != null && widget.book.filesizeString!.isNotEmpty;
-    
+
     if (!hasScore && !hasSize) {
       // Show nothing if no data available
       return const SizedBox.shrink();
     }
-    
+
+    final cs = Theme.of(context).colorScheme;
     return Row(
       children: [
         if (hasScore) ...[
@@ -233,10 +235,10 @@ class _BookCardState extends State<BookCard> with SingleTickerProviderStateMixin
           const SizedBox(width: 4),
           Text(
             widget.book.interestScore!,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+              color: cs.onSurface,
             ),
           ),
         ],
@@ -244,9 +246,9 @@ class _BookCardState extends State<BookCard> with SingleTickerProviderStateMixin
         if (hasSize)
           Text(
             widget.book.filesizeString!,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
-              color: AppColors.textSecondary,
+              color: cs.onSurfaceVariant,
             ),
           ),
       ],

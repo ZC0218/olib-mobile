@@ -141,17 +141,17 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                 child: Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.close_rounded,
-                          color: AppColors.textPrimary),
+                      icon: Icon(Icons.close_rounded,
+                          color: Theme.of(context).colorScheme.onSurface),
                       onPressed: () => Navigator.pop(context, false),
                     ),
                     Expanded(
                       child: Text(
                         isZh ? '扫码授权' : 'Scan to Authorize',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -189,10 +189,10 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                           isZh
                               ? '使用微信扫描下方二维码'
                               : 'Scan the QR code with WeChat',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -203,7 +203,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                               : 'Follow our account to unlock AI features',
                           style: TextStyle(
                             fontSize: 14,
-                            color: AppColors.textSecondary,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -331,7 +331,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
               style: const TextStyle(fontSize: 13),
             ),
             style: TextButton.styleFrom(
-              foregroundColor: AppColors.textSecondary,
+              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -405,14 +405,14 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(width: 10),
           Text(
             isZh ? '等待扫码中...' : 'Waiting for scan...',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 14,
             ),
           ),
