@@ -11,9 +11,15 @@ class QrAuthScreen extends ConsumerStatefulWidget {
   ConsumerState<QrAuthScreen> createState() => _QrAuthScreenState();
 }
 
+/// 页面所处的阶段。
+/// - [recovering] 24h 内授权过 → 先静默 register+/status 尝试恢复，不弹 QR
+/// - [qr] 走正常 register → fetchQrCode → 轮询的二维码流程
+enum _Phase { recovering, qr }
+
 class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
   bool _isLoading = true;
   String? _initError;
+  _Phase _phase = _Phase.qr;
 
   @override
   void initState() {
@@ -23,14 +29,33 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
 
   Future<void> _initAuth() async {
     if (!mounted) return;
+
+    final notifier = ref.read(backendAuthProvider.notifier);
+
+    // 24h 内授权过 → 先静默恢复，避免每次都让用户再扫一遍
+    if (notifier.isWithinRecoveryWindow) {
+      setState(() {
+        _phase = _Phase.recovering;
+        _isLoading = true;
+        _initError = null;
+      });
+
+      final recovered = await notifier.tryRecoverAuth();
+      if (!mounted) return;
+      if (recovered) {
+        Navigator.pop(context, true);
+        return;
+      }
+      // 恢复失败 → 回退到 QR 流程
+    }
+
     setState(() {
+      _phase = _Phase.qr;
       _isLoading = true;
       _initError = null;
     });
 
     try {
-      final notifier = ref.read(backendAuthProvider.notifier);
-
       // 1. 确保已注册设备
       final authState = ref.read(backendAuthProvider);
       if (authState.jwt == null) {
@@ -47,7 +72,7 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
         return;
       }
 
-      // 3. 如果已授权，直接返回
+      // 3. 如果已授权（极少见，比如 _refreshStatusFromServer 已经把状态拉成 authorized），直接返回
       if (afterRegister.isAuthorized) {
         if (mounted) Navigator.pop(context, true);
         return;
@@ -165,61 +190,9 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
                 child: Center(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 图标
-                        Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF07C160).withValues(alpha:0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.qr_code_scanner_rounded,
-                            size: 36,
-                            color: Color(0xFF07C160),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // 标题
-                        Text(
-                          isZh
-                              ? '使用微信扫描下方二维码'
-                              : 'Scan the QR code with WeChat',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isZh
-                              ? '关注公众号即可解锁 AI 寻书功能'
-                              : 'Follow our account to unlock AI find-books',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-
-                        // 二维码区域
-                        _buildQrSection(authState, isZh),
-
-                        const SizedBox(height: 24),
-
-                        // 状态提示
-                        _buildStatusHint(authState, isZh),
-
-                        const SizedBox(height: 40),
-                      ],
-                    ),
+                    child: _phase == _Phase.recovering
+                        ? _buildRecoveringBody(isZh)
+                        : _buildQrBody(authState, isZh),
                   ),
                 ),
               ),
@@ -227,6 +200,131 @@ class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 恢复中：上次授权过且在 24h 窗口内，先静默 register+/status 看看后端
+  /// 还认不认这台设备。这里不暴露二维码，避免用户重复扫码。
+  Widget _buildRecoveringBody(bool isZh) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.verified_user_outlined,
+            size: 36,
+            color: cs.primary,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          isZh ? '正在校验授权…' : 'Verifying authorization…',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurface,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          isZh
+              ? '检测到你最近授权过，正在确认会话…'
+              : "You authorized recently — checking your session…",
+          style: TextStyle(
+            fontSize: 13,
+            color: cs.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 28),
+        SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: cs.primary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// QR 流程主体：原来的图标 + 标题 + 二维码 + 状态提示。
+  /// 静默恢复失败时也回退到这里（提示文案微调一下，告诉用户为什么）。
+  Widget _buildQrBody(BackendAuthState authState, bool isZh) {
+    final cs = Theme.of(context).colorScheme;
+    // 进入 QR 时若曾经授权过（即从 recovering 回退来的），副标题改成提示重新扫码。
+    final notifier = ref.read(backendAuthProvider.notifier);
+    final reauthing = notifier.lastAuthorizedAt() != null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 图标
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: const Color(0xFF07C160).withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.qr_code_scanner_rounded,
+            size: 36,
+            color: Color(0xFF07C160),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // 标题
+        Text(
+          isZh
+              ? (reauthing ? '需要重新扫码授权' : '使用微信扫描下方二维码')
+              : (reauthing
+                  ? 'Please scan again to re-authorize'
+                  : 'Scan the QR code with WeChat'),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurface,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isZh
+              ? (reauthing
+                  ? '会话已失效，扫码后即可继续使用'
+                  : '关注公众号即可解锁 AI 寻书功能')
+              : (reauthing
+                  ? 'Session expired — scan to continue'
+                  : 'Follow our account to unlock AI find-books'),
+          style: TextStyle(
+            fontSize: 14,
+            color: cs.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+
+        // 二维码区域
+        _buildQrSection(authState, isZh),
+
+        const SizedBox(height: 24),
+
+        // 状态提示
+        _buildStatusHint(authState, isZh),
+
+        const SizedBox(height: 40),
+      ],
     );
   }
 

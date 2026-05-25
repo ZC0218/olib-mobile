@@ -12,6 +12,13 @@ const _kJwt = 'backend_jwt';
 const _kRole = 'backend_role';
 const _kUserId = 'backend_user_id';
 const _kDeviceId = 'backend_device_id';
+/// 最近一次授权成功的时间戳（ms since epoch）。
+/// 用于 QR 授权页：24h 内进入时先尝试静默恢复，不直接弹二维码。
+const _kLastAuthorizedAt = 'backend_last_authorized_at';
+
+/// 静默恢复窗口：上次授权后这段时间内进入 QR 授权页，先尝试 register+/status
+/// 自动续会话，失败才回退到二维码扫码。
+const recoveryWindow = Duration(hours: 24);
 
 // ---------- State ----------
 
@@ -333,12 +340,69 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
     }
   }
 
-  /// 持久化认证信息
+  /// 持久化认证信息。role == 'authorized' 时顺便打 timestamp，
+  /// 给静默恢复窗口判定用。
   Future<void> _saveAuth(String jwt, String role, int? userId) async {
     final box = HiveService.authBox;
     await box.put(_kJwt, jwt);
     await box.put(_kRole, role);
     if (userId != null) await box.put(_kUserId, userId);
+    if (role == 'authorized' || role == 'admin') {
+      await box.put(_kLastAuthorizedAt, DateTime.now().millisecondsSinceEpoch);
+    }
+  }
+
+  /// 返回上次授权成功的时间；从未授权或 Hive 没记录返回 null。
+  DateTime? lastAuthorizedAt() {
+    final ms = HiveService.authBox.get(_kLastAuthorizedAt) as int?;
+    if (ms == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
+  /// 是否在静默恢复窗口内（即"24h 内授权过"）。
+  bool get isWithinRecoveryWindow {
+    final last = lastAuthorizedAt();
+    if (last == null) return false;
+    return DateTime.now().difference(last) < recoveryWindow;
+  }
+
+  /// 尝试静默恢复授权：重新 register 拿 anon token，再调 /status。
+  /// 后端如果还记得这个 device → 直接返回 authorized + 正式 olib token，跳过二维码；
+  /// 否则返回 false，调用方应回退到正常 QR 流程。
+  Future<bool> tryRecoverAuth() async {
+    try {
+      debugPrint('[BackendAuth] tryRecoverAuth: re-register first');
+      await register();
+      if (state.jwt == null) {
+        debugPrint('[BackendAuth] tryRecoverAuth: no anon jwt after register');
+        return false;
+      }
+
+      final response = await _api.checkStatus(state.jwt!);
+      if (response.status != 'authorized') {
+        debugPrint(
+          '[BackendAuth] tryRecoverAuth: status=${response.status}, 设备未绑定 → 走 QR',
+        );
+        return false;
+      }
+
+      final newToken = response.token ?? state.jwt!;
+      final userId = response.userId;
+      debugPrint('[BackendAuth] tryRecoverAuth: ✓ recovered, user_id=$userId');
+      await _saveAuth(newToken, 'authorized', userId);
+      if (mounted) {
+        state = BackendAuthState(
+          status: BackendAuthStatus.authorized,
+          jwt: newToken,
+          role: 'authorized',
+          userId: userId,
+        );
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[BackendAuth] tryRecoverAuth failed: $e');
+      return false;
+    }
   }
 
   /// 登出 — 清除所有认证数据
@@ -348,6 +412,7 @@ class BackendAuthNotifier extends StateNotifier<BackendAuthState> {
     await box.delete(_kJwt);
     await box.delete(_kRole);
     await box.delete(_kUserId);
+    await box.delete(_kLastAuthorizedAt);
     state = const BackendAuthState(status: BackendAuthStatus.unauthorized);
   }
 

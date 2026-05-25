@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:awesome_dialog/awesome_dialog.dart';
 import '../../providers/books_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/backend_auth_provider.dart';
 import '../../services/update_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/book_card.dart';
@@ -135,6 +136,25 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkForUpdates();
     });
+  }
+
+  /// 寻书入口：未授权先弹扫码授权页，授权成功才允许进寻书页。
+  /// 把校验放在入口（而非进入寻书页后）的好处：
+  /// 1) 用户路径更清晰——授权 ≡ 进入功能；
+  /// 2) 寻书页内部的防御性 _ensureAuthorized 是兜底，正常路径不会再触发；
+  /// 3) 避免未授权状态下泄露任何 UI 引诱用户点击。
+  Future<void> _openPrescriber() async {
+    final isAuthorized = ref.read(backendAuthProvider).isAuthorized;
+    if (isAuthorized) {
+      Navigator.of(context).pushNamed(AppRoutes.prescriber);
+      return;
+    }
+
+    final result = await Navigator.of(context).pushNamed(AppRoutes.qrAuth);
+    if (!mounted) return;
+    if (result == true) {
+      Navigator.of(context).pushNamed(AppRoutes.prescriber);
+    }
   }
 
   Future<void> _checkForUpdates() async {
@@ -341,9 +361,9 @@ class _HomeTabState extends ConsumerState<_HomeTab> {
 
                   const SizedBox(height: 16),
 
-                  // 寻书入口（AI 推荐）
+                  // 寻书入口（AI 推荐）— 入口处先校验授权，未授权直接走扫码
                   GestureDetector(
-                    onTap: () => Navigator.of(context).pushNamed(AppRoutes.prescriber),
+                    onTap: _openPrescriber,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
