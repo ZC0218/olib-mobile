@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../theme/app_colors.dart';
@@ -27,7 +28,13 @@ class AboutSection extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: Text(AppLocalizations.of(context).get('version')),
-                trailing: const Text('1.0.6'),
+                trailing: FutureBuilder<PackageInfo>(
+                  future: PackageInfo.fromPlatform(),
+                  builder: (context, snapshot) {
+                    final version = snapshot.data?.version ?? '...';
+                    return Text(version);
+                  },
+                ),
               ),
               const SettingsDivider(),
               ListTile(
