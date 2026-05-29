@@ -176,8 +176,8 @@ class DownloadNotifier extends StateNotifier<List<DownloadTask>> {
   /// Start a download.
   ///
   /// 默认走 ZLibraryApi（用户自己账号查 URL + 下载）。
-  /// [presetUrl] 传入时跳过 ZLibrary URL 获取，直接用此 URL 下文件 —
-  /// 用于 AI 寻书结果走 backend 拿到的签名 URL，不消耗用户自己的 z-library
+  /// [presetUrl] 传入时跳过 URL 获取，直接用此 URL 下文件 —
+  /// 用于 AI 寻书结果走 backend 拿到的签名 URL，不消耗用户自己的 z站
   /// 配额（但消耗已在 backend 端记账的免费下载配额）。
   Future<void> startDownload(Book book, {String? presetUrl}) async {
     final id = book.id.toString();
@@ -255,7 +255,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadTask>> {
       // Start download directly to final path
       if (presetUrl != null) {
         // AI 寻书路径：backend 已签发 URL，直接 stream 到本地
-        // 用独立 Dio，不带 z-library cookie / auth
+        // 用独立 Dio，不带 z站 cookie / auth
         final dio = Dio();
         await dio.download(
           presetUrl,
@@ -269,7 +269,7 @@ class DownloadNotifier extends StateNotifier<List<DownloadTask>> {
           cancelToken: cancelToken,
         );
       } else {
-        // 默认路径：用户自己 z-library 账号查 URL + 下载
+        // 默认路径：用户自己 z站 账号查 URL + 下载
         await _api.downloadBook(
           book.id.toString(),
           book.hash ?? '',

@@ -3,7 +3,7 @@ import '../models/display_book.dart';
 /// 书架来源
 enum ShelfSource { library, weread }
 
-/// 统一书架条目 — 合并 ZLibrary 收藏和微信读书书架
+/// 统一书架条目 — 合并 z站收藏和微信读书书架
 class UnifiedShelfItem {
   final ShelfSource source;
   final DisplayBook displayBook;

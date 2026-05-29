@@ -431,12 +431,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   
                   const SizedBox(height: 24),
 
-                  // Hint: Use Z-Library official account
+                  // Hint: Use Z站 official account
                   _buildAccountHint(context),
 
                   const SizedBox(height: 16),
 
-                  // Skip login — enter Home without Z-Library account
+                  // Skip login — enter Home without account
                   _buildSkipLogin(context),
                 ],
               ),
@@ -474,8 +474,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               Flexible(
                 child: Text(
                   isZh 
-                      ? '请使用 Z-Library 官网账号登录'
-                      : 'Please login with your Z-Library account',
+                      ? '请使用 z站 官网账号登录'
+                      : 'Please login with your z-site account',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha:0.9),
                     fontSize: 13,

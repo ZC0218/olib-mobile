@@ -161,8 +161,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
         title: Text(isZh ? '线路不可用' : 'Line Unavailable'),
         content: Text(
           isZh
-              ? '当前线路无法连接到 Z-Library，请切换到其他线路后重试。'
-              : 'Current line cannot reach Z-Library. Please switch to another line and retry.',
+              ? '当前线路无法连接到 z站，请切换到其他线路后重试。'
+              : 'Current line cannot reach the site. Please switch to another line and retry.',
         ),
         actions: [
           TextButton(

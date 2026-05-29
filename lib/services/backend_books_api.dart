@@ -14,7 +14,7 @@ class FreeDownloadQuotaExceeded implements Exception {
 }
 
 /// 后端下载中介 — 仅给 AI 寻书结果用（ReadingTip.fromAi == true）。
-/// 普通搜索/详情的下载仍由前端直连用户自己的 z-library 账号。
+/// 普通搜索/详情的下载仍由前端直连用户自己的 z站 账号。
 class BackendBooksApi {
   late final Dio _dio;
 
@@ -29,7 +29,7 @@ class BackendBooksApi {
 
   /// 拿一本 AI 推荐书的下载 URL。
   /// - [olibToken] 主 app 已授权用户的 JWT (backend olib audience)
-  /// - 返回：真实的 z-library 签名下载 URL 字符串
+  /// - 返回：真实的签名下载 URL 字符串
   ///
   /// 抛出：
   /// - [FreeDownloadQuotaExceeded] 当日配额耗尽（后端 429 + detail=QUOTA_EXCEEDED_DOWNLOAD）

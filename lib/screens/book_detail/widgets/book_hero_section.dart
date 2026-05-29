@@ -36,7 +36,7 @@ class BookHeroSection extends ConsumerWidget {
         ),
       ),
       actions: [
-        // ── Favorite Heart Icon (only for Z-Library books) ──
+        // ── Favorite Heart Icon (only for z站 books) ──
         if (book.isZLibrary)
           Padding(
             padding: const EdgeInsets.only(right: 8.0),

@@ -23,7 +23,7 @@ class BookActionBar extends ConsumerWidget {
   final bool isCompleted;
   final bool isDark;
   /// 从 AI 寻书入口进来的书，下载走 backend 免费下载路径，
-  /// 不消耗用户 z-library 账号配额。详见 BookDetailArgs。
+  /// 不消耗用户 z站 账号配额。详见 BookDetailArgs。
   final bool fromAi;
 
   const BookActionBar({
@@ -268,7 +268,7 @@ class BookActionBar extends ConsumerWidget {
   /// 真正触发下载的统一入口 — 根据 fromAi 二分：
   /// - fromAi=true:  调 backend `/books/download-url` 拿 z-lib 签名 URL（消耗
   ///                 免费下载配额），用内置 DownloadNotifier streaming 到本地
-  /// - fromAi=false: 老路径，用户自己 z-library 账号
+  /// - fromAi=false: 老路径，用户自己 z站 账号
   ///
   /// 配额耗尽时显示文学化文案，UI 无任何"配额/免费"商业词。
   Future<void> _kickoffDownload(BuildContext context, WidgetRef ref) async {

@@ -181,8 +181,8 @@ final recommendedBooksProvider = FutureProvider<List<Book>>((ref) async {
   return response.data ?? [];
 });
 
-/// 首页混合推荐：并发拉 Z-Library + WeRead，合并为 DisplayBook 列表。
-/// Z-Library 失败/未登录时 graceful fallback 到仅 WeRead。
+/// 首页混合推荐：并发拉 z站 + WeRead，合并为 DisplayBook 列表。
+/// z站 失败/未登录时 graceful fallback 到仅 WeRead。
 final homeRecommendedProvider = Provider<AsyncValue<List<DisplayBook>>>((ref) {
   final zlibAsync = ref.watch(recommendedBooksProvider);
   final wereadAsync = ref.watch(wereadRecommendProvider);

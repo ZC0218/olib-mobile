@@ -14,16 +14,16 @@ class DisplayBook {
   final String? author;
   final String? cover;
 
-  /// 卡片左上标签（Z-Lib: 格式 "EPUB"；WeRead: 分类 "科幻小说"）
+  /// 卡片左上标签（z站: 格式 "EPUB"；WeRead: 分类 "科幻小说"）
   final String? tag;
 
-  /// 卡片右上标签（Z-Lib: 年份 "2020"；WeRead: 评分 "⭐9.3"）
+  /// 卡片右上标签（z站: 年份 "2020"；WeRead: 评分 "⭐9.3"）
   final String? tagExtra;
 
-  /// 评分/兴趣分（Z-Lib: interestScore；WeRead: ratingScore）
+  /// 评分/兴趣分（z站: interestScore；WeRead: ratingScore）
   final String? score;
 
-  /// 卡片底部右侧辅助文本（各数据源含义不同：Z-Lib=文件大小；WeRead=在读人数）
+  /// 卡片底部右侧辅助文本（各数据源含义不同：z站=文件大小；WeRead=在读人数）
   final String? meta;
 
   /// 详情页简介
@@ -53,13 +53,13 @@ class DisplayBook {
     this.original,
   });
 
-  /// 是否来自 Z-Library
+  /// 是否来自 z站
   bool get isZLibrary => source == BookSource.zlibrary;
 
   /// 是否来自微信读书
   bool get isWeread => source == BookSource.weread;
 
-  /// 获取原始 Z-Library Book 对象（仅当 source == zlibrary 时有效）
+  /// 获取原始 z站 Book 对象（仅当 source == zlibrary 时有效）
   Book? get asZLibBook => isZLibrary ? original as Book? : null;
 
   /// 获取原始 WeRead BookInfo 对象（仅当 source == weread 时有效）
@@ -70,7 +70,7 @@ class DisplayBook {
 // Extension 适配器
 // ═══════════════════════════════════════════════════════════════════
 
-/// Z-Library Book → DisplayBook
+/// z站 Book → DisplayBook
 extension BookToDisplay on Book {
   DisplayBook toDisplay() => DisplayBook(
         id: id.toString(),

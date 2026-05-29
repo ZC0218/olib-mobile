@@ -103,7 +103,7 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
         preferredFormat: state.preferredFormat,
       );
 
-      // 异步匹配 ZLibrary 书籍
+      // 异步匹配 z站 书籍
       _matchBooks(bag, gen);
     } catch (e) {
       if (gen != _generation || !mounted) return;
@@ -130,7 +130,7 @@ class PrescriberNotifier extends StateNotifier<PrescriberState> {
     }
   }
 
-  /// 异步匹配每本书的 ZLibrary 资源
+  /// 异步匹配每本书的 z站 资源
   Future<void> _matchBooks(ReadingBag bag, int gen) async {
     for (int i = 0; i < bag.tips.length; i++) {
       if (gen != _generation || !mounted) return;

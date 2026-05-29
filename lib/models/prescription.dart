@@ -7,10 +7,10 @@ class ReadingTip {
   final String reason; // 推荐理由
   final String category; // 治愈/技能/娱乐
   /// 后端标识：true = AI 寻书结果，下载走 backend /books/download-url
-  /// （受免费下载配额限制）；false = 普通来源，下载走用户自己 ZLibraryApi。
+  /// （受免费下载配额限制）；false = 普通来源，下载走用户自己的 API。
   /// 后端 prescribe 永远返 true；如果将来从别处构造 Tip 应显式设 false。
   final bool fromAi;
-  Book? matchedBook; // ZLibrary 匹配结果（异步填充）
+  Book? matchedBook; // z站匹配结果（异步填充）
   bool isSearching; // 是否正在搜索匹配
 
   ReadingTip({

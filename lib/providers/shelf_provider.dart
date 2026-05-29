@@ -9,7 +9,7 @@ import 'weread_provider.dart';
 /// 书架来源筛选状态
 final shelfFilterProvider = StateProvider<ShelfSource?>((ref) => null);
 
-/// 统一书架 — 合并 ZLibrary 收藏和微信读书书架，分组显示
+/// 统一书架 — 合并 z站收藏和微信读书书架，分组显示
 final unifiedShelfProvider =
     Provider<AsyncValue<List<UnifiedShelfItem>>>((ref) {
   final filter = ref.watch(shelfFilterProvider);

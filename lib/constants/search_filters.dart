@@ -1,4 +1,4 @@
-/// Search filter constants for ZLibrary API
+/// Search filter constants for book search API
 
 /// Language options for book search
 const searchLanguages = {

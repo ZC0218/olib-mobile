@@ -296,7 +296,7 @@ class DomainSelectionDialog extends ConsumerWidget {
           controller: controller,
           decoration: InputDecoration(
             labelText: isZh ? '域名地址' : 'Domain URL',
-            hintText: 'e.g., z-library.sk',
+            hintText: 'e.g., example.com',
           ),
         ),
         actions: [
