@@ -20,7 +20,8 @@ jobs:
 
       - name: Flutter初始化配置
         run: |
-          flutter config --enable-swift-package-manager
+          # 禁用SPM，避免FlutterFramework找不到的bug
+          flutter config --no-enable-swift-package-manager
           flutter doctor
           flutter clean
 
@@ -29,6 +30,15 @@ jobs:
           perl -i -pe 's/^(\s*olib_api_plugin:)/#$1/' pubspec.yaml
           perl -i -pe 's/^(\s*path: vendor\/olib_api_plugin)/#$1/' pubspec.yaml
           echo "已注释olib_api_plugin本地依赖"
+
+      - name: 项目级禁用SPM
+        run: |
+          # 在pubspec.yaml的flutter部分添加禁用SPM配置
+          if grep -q "flutter:" pubspec.yaml; then
+            # 找到flutter:那一行，在后面插入enable-swift-package-manager: false
+            perl -i -pe 's/^(flutter:)$/$1\n  enable-swift-package-manager: false/' pubspec.yaml
+          fi
+          echo "已在项目级禁用SPM"
 
       - name: Install pub dependencies
         run: flutter pub get
