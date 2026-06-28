@@ -20,27 +20,30 @@ jobs:
           flutter-version: 3.38.7
           cache: true
 
-      # 开启Swift Package Manager + 环境校验 + 清理缓存
+      # 开启SPM、环境校验、清理缓存
       - name: Flutter初始化配置、Doctor & Clean
         run: |
           flutter config --enable-swift-package-manager
           flutter doctor
           flutter clean
 
-      # 临时注释不存在的本地依赖 olib_api_plugin（解决上一轮路径缺失报错）
-      - name: 注释缺失本地vendor插件依赖
+      # 注释不存在的本地vendor插件依赖
+      - name: 注释缺失本地olib_api_plugin依赖
         run: |
           sed -i '' '/olib_api_plugin:/,/path:/ s/^/#/' pubspec.yaml
           cat pubspec.yaml
 
-      # 安装pub依赖（已开启SPM，兼容receive_sharing_intent）
+      # 安装pub依赖
       - name: Install pub dependencies
         run: flutter pub get
 
-      # 安装iOS Pod依赖
-      - name: Install Pods
+      # 修复Podfile最低iOS版本，再执行pod install
+      - name: Fix Podfile iOS Version & Install Pods
         run: |
           cd ios
+          # 强制修改platform为13.0
+          sed -i '' 's/platform :ios, .*/platform :ios, "13.0"/' Podfile
+          pod repo update
           pod install
 
       # Flutter官方无签名编译Release包
@@ -57,7 +60,7 @@ jobs:
           mkdir -p ../output
           mv olib-mobile-unsigned.ipa ../output/
 
-      # 上传IPA至Actions制品，网页下载
+      # 上传IPA至Actions制品
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
