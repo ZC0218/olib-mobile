@@ -26,21 +26,9 @@ jobs:
 
       - name: 注释本地olib_api_plugin依赖
         run: |
-          # 注释掉缺失的本地插件依赖
           perl -i -pe 's/^(\s*olib_api_plugin:)/#$1/' pubspec.yaml
           perl -i -pe 's/^(\s*path: vendor\/olib_api_plugin)/#$1/' pubspec.yaml
           echo "已注释olib_api_plugin本地依赖"
-
-      - name: 降级device_info_plus
-        run: |
-          if ! grep -q "dependency_overrides:" pubspec.yaml; then
-            echo "" >> pubspec.yaml
-            echo "dependency_overrides:" >> pubspec.yaml
-            echo "  device_info_plus: 11.2.1" >> pubspec.yaml
-          else
-            echo "  device_info_plus: 11.2.1" >> pubspec.yaml
-          fi
-          echo "已配置device_info_plus降级"
 
       - name: Install pub dependencies
         run: flutter pub get
