@@ -24,17 +24,13 @@ jobs:
           flutter doctor
           flutter clean
 
-      - name: 降级device_info_plus（预防VisionOS编译错误）
+      - name: 降级device_info_plus
         run: |
-          # 检查是否已有dependency_overrides，没有就追加
           if ! grep -q "dependency_overrides:" pubspec.yaml; then
-            cat >> pubspec.yaml << 'EOF'
-
-dependency_overrides:
-  device_info_plus: 11.2.1
-EOF
+            echo "" >> pubspec.yaml
+            echo "dependency_overrides:" >> pubspec.yaml
+            echo "  device_info_plus: 11.2.1" >> pubspec.yaml
           else
-            # 已有则追加device_info_plus降级
             echo "  device_info_plus: 11.2.1" >> pubspec.yaml
           fi
           echo "已配置device_info_plus降级"
@@ -42,41 +38,36 @@ EOF
       - name: Install pub dependencies
         run: flutter pub get
 
-      - name: 修复Podfile与Xcode项目部署版本
+      - name: 修复Podfile与项目部署版本
         run: |
           cd ios
           
-          # ====== 修复 Podfile ======
-          # 先查看原始Podfile前10行
-          echo "=== Podfile 原始内容前15行 ==="
-          head -15 Podfile
+          echo "=== 修改前 Podfile ==="
+          head -10 Podfile
           
-          # 移除platform行的注释（如果被注释了），并强制设置为13.0
+          # 用perl修改Podfile，兼容各种格式
+          perl -i -pe 's/^#\s*platform\s+:ios/platform :ios/' Podfile
+          
           if grep -q "platform :ios" Podfile; then
-            # 存在platform行，先取消注释（如果有#），再修改版本
-            sed -i '' 's/#.*platform :ios/platform :ios/' Podfile
-            sed -i '' 's/platform :ios, .*/platform :ios, "13.0"/' Podfile
-            echo "已修改现有platform行为13.0"
+            perl -i -pe 's/platform :ios,\s*['\''"]?\d+\.\d+['\''"]?/platform :ios, "13.0"/' Podfile
           else
-            # 不存在platform行，在文件开头插入
-            sed -i '' '1i\
-platform :ios, "13.0"' Podfile
-            echo "已在文件开头插入platform :ios, 13.0"
+            echo 'platform :ios, "13.0"' > /tmp/podfile_head
+            cat Podfile >> /tmp/podfile_head
+            mv /tmp/podfile_head Podfile
           fi
           
-          echo "=== 修改后Podfile前5行 ==="
+          echo "=== 修改后 Podfile ==="
           head -5 Podfile
           
-          # ====== 修复 Runner.xcodeproj 部署版本 ======
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 11.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
+          # 修改Xcode项目部署版本
+          perl -i -pe 's/IPHONEOS_DEPLOYMENT_TARGET = \d+\.\d+;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
           echo "已修改Runner.xcodeproj部署版本为13.0"
 
       - name: Install Pods
         run: |
           cd ios
           pod repo update
-          pod install --verbose
+          pod install
 
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
