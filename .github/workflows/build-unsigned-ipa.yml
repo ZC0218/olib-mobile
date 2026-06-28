@@ -9,48 +9,78 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-      # 拉取完整仓库源码
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 配置指定Flutter版本并缓存
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.38.7
           cache: true
 
-      # 开启SPM、环境校验、清理缓存
-      - name: Flutter初始化配置、Doctor & Clean
+      - name: Flutter初始化配置
         run: |
           flutter config --enable-swift-package-manager
           flutter doctor
           flutter clean
 
-      # 注释不存在的本地vendor插件依赖
-      - name: 注释缺失本地olib_api_plugin依赖
+      - name: 降级device_info_plus（预防VisionOS编译错误）
         run: |
-          sed -i '' '/olib_api_plugin:/,/path:/ s/^/#/' pubspec.yaml
-          cat pubspec.yaml
+          # 检查是否已有dependency_overrides，没有就追加
+          if ! grep -q "dependency_overrides:" pubspec.yaml; then
+            cat >> pubspec.yaml << 'EOF'
 
-      # 安装pub依赖
+dependency_overrides:
+  device_info_plus: 11.2.1
+EOF
+          else
+            # 已有则追加device_info_plus降级
+            echo "  device_info_plus: 11.2.1" >> pubspec.yaml
+          fi
+          echo "已配置device_info_plus降级"
+
       - name: Install pub dependencies
         run: flutter pub get
 
-      # 修复Podfile最低iOS版本，再执行pod install
-      - name: Fix Podfile iOS Version & Install Pods
+      - name: 修复Podfile与Xcode项目部署版本
         run: |
           cd ios
-          # 强制修改platform为13.0
-          sed -i '' 's/platform :ios, .*/platform :ios, "13.0"/' Podfile
-          pod repo update
-          pod install
+          
+          # ====== 修复 Podfile ======
+          # 先查看原始Podfile前10行
+          echo "=== Podfile 原始内容前15行 ==="
+          head -15 Podfile
+          
+          # 移除platform行的注释（如果被注释了），并强制设置为13.0
+          if grep -q "platform :ios" Podfile; then
+            # 存在platform行，先取消注释（如果有#），再修改版本
+            sed -i '' 's/#.*platform :ios/platform :ios/' Podfile
+            sed -i '' 's/platform :ios, .*/platform :ios, "13.0"/' Podfile
+            echo "已修改现有platform行为13.0"
+          else
+            # 不存在platform行，在文件开头插入
+            sed -i '' '1i\
+platform :ios, "13.0"' Podfile
+            echo "已在文件开头插入platform :ios, 13.0"
+          fi
+          
+          echo "=== 修改后Podfile前5行 ==="
+          head -5 Podfile
+          
+          # ====== 修复 Runner.xcodeproj 部署版本 ======
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 11.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
+          echo "已修改Runner.xcodeproj部署版本为13.0"
 
-      # Flutter官方无签名编译Release包
+      - name: Install Pods
+        run: |
+          cd ios
+          pod repo update
+          pod install --verbose
+
       - name: Build unsigned iOS app
         run: flutter build ios --release --no-codesign
 
-      # 标准Payload打包成IPA
       - name: Package unsigned IPA
         run: |
           mkdir -p build/tmp/Payload
@@ -60,7 +90,6 @@ jobs:
           mkdir -p ../output
           mv olib-mobile-unsigned.ipa ../output/
 
-      # 上传IPA至Actions制品
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
