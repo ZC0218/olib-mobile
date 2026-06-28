@@ -1,0 +1,107 @@
+name: Build Unsigned IPA (Flutter 3.38.7)
+run-name: 编译无签名IPA | Flutter 3.38.7 Stable
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build_ios_unsigned:
+    runs-on: macos-latest
+    steps:
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter 3.38.7 Stable
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.7'
+          channel: stable
+          cache: true
+
+      - name: 自动切换Xcode 16
+        run: |
+          XCODE_PATH=$(find /Applications -name "Xcode*.app" -maxdepth 1 | grep -E "Xcode.*16" | head -1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "未找到Xcode16，使用系统默认Xcode"
+          else
+            sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+            echo "已切换至 $XCODE_PATH"
+          fi
+          xcodebuild -version
+
+      - name: Flutter环境校验
+        run: flutter doctor -v
+
+      - name: 清理项目缓存
+        run: flutter clean
+
+      # 修复 device_info_plus VisionOS API 编译报错
+      - name: 强制降级device_info_plus插件
+        run: |
+          cat >> pubspec.yaml << 'EOF'
+
+dependency_overrides:
+  device_info_plus: 11.2.1
+EOF
+          echo "已追加dependency_overrides锁定device_info_plus=11.2.1"
+
+      - name: 拉取pub依赖
+        run: flutter pub get
+
+      - name: 修改Podfile最低iOS版本并安装依赖
+        run: |
+          cd ios
+          sed -i '' 's/platform :ios, .*/platform :ios, "13.0"/' Podfile
+          pod repo update
+          pod install --verbose
+
+      # 批量统一关闭签名、最低系统版本、Swift版本
+      - name: 批量修正Runner与Pods项目配置
+        run: |
+          cd ios
+          # 主项目Runner
+          sed -i '' 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 11.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Runner.xcodeproj/project.pbxproj
+
+          # Pods依赖项目
+          sed -i '' 's/DEVELOPMENT_TEAM = [^;]*;/DEVELOPMENT_TEAM = "";/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 9.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 10.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 11.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/SWIFT_VERSION = 4.0;/SWIFT_VERSION = 5.0;/g' Pods/Pods.xcodeproj/project.pbxproj
+          sed -i '' 's/SWIFT_VERSION = 4.2;/SWIFT_VERSION = 5.0;/g' Pods/Pods.xcodeproj/project.pbxproj
+          echo "Runner & Pods 签名、系统版本、Swift版本统一修改完成"
+
+      # Flutter官方无签名编译Release App包
+      - name: Flutter编译无签名Release App
+        run: |
+          flutter build ios --release --no-codesign
+          ls -lh build/ios/Release-iphoneos/
+
+      # 手动打包标准未签名IPA
+      - name: 组装未签名IPA
+        run: |
+          mkdir -p build/ios/tmp/Payload
+          cp -r build/ios/Release-iphoneos/Runner.app build/ios/tmp/Payload/
+          cd build/ios/tmp
+          zip -qr olib-mobile-unsigned.ipa Payload
+          mkdir -p ../ipa
+          mv olib-mobile-unsigned.ipa ../ipa/
+          cd ../../../
+
+      - name: 校验IPA输出目录
+        run: ls -lh build/ios/ipa/
+
+      - name: 上传制品至Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: olib-mobile-unsigned-ipa-flutter3.38.7
+          path: build/ios/ipa/*.ipa
+          retention-days: 30
