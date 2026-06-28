@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/zlibrary_api.dart';
+import 'package:olib_api_plugin/olib_api_plugin.dart';
 
-/// Provider for the ZLibrary API singleton instance
+/// Provider for the ZLibraryApi singleton instance
 final zlibraryApiProvider = Provider<ZLibraryApi>((ref) {
   // We don't set domain here because DomainNotifier will set it 
   // immediately upon creation. However, DomainNotifier READS this provider.
@@ -13,7 +13,7 @@ final zlibraryApiProvider = Provider<ZLibraryApi>((ref) {
   final api = ZLibraryApi();
   // We can't use HiveService here easily without imports, but we can try?
   // Actually, DomainProvider handles the logic. 
-  // API defaults to 'z-library.sk'. 
+  // API defaults to a fallback domain.
   // If DomainNotifier isn't alive, API uses default.
   // IF we want persisted domain on startup for background tasks (if any), 
   // we should read Hive here.

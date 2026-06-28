@@ -1,33 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/book.dart';
-import '../services/zlibrary_api.dart';
+import 'package:olib_api_plugin/olib_api_plugin.dart';
+import '../models/display_book.dart';
 import '../services/storage_service.dart';
 import 'zlibrary_provider.dart';
+import 'weread_provider.dart';
 
-/// Search results provider (family for different queries)
-final searchResultsProvider =
-    FutureProvider.family<List<Book>, SearchParams>((ref, params) async {
-  final api = ref.watch(zlibraryApiProvider);
-  
-  final response = await api.search(
-    message: params.query,
-    yearFrom: params.yearFrom,
-    yearTo: params.yearTo,
-    languages: params.languages,
-    extensions: params.extensions,
-    order: params.order,
-    page: params.page,
-    limit: params.limit,
-  );
-
-  final success = response['success'];
-  if ((success == true || success == 1) && response.containsKey('books')) {
-    final booksData = response['books'] as List<dynamic>;
-    return booksData.map((json) => Book.fromJson(json)).toList();
-  }
-  
-  return [];
-});
+// ── Search ──────────────────────────────────────────────────────────
 
 class SearchParams {
   final String? query;
@@ -36,8 +14,7 @@ class SearchParams {
   final List<String>? languages;
   final List<String>? extensions;
   final String? order;
-  final int? page;
-  final int? limit;
+  final int limit;
 
   SearchParams({
     this.query,
@@ -46,60 +23,130 @@ class SearchParams {
     this.languages,
     this.extensions,
     this.order,
-    this.page,
-    this.limit,
+    this.limit = 20,
   });
-
-  @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    return other is SearchParams &&
-        other.query == query &&
-        other.yearFrom == yearFrom &&
-        other.yearTo == yearTo &&
-        _listEquals(other.languages, languages) &&
-        _listEquals(other.extensions, extensions) &&
-        other.order == order &&
-        other.page == page &&
-        other.limit == limit;
-  }
-  
-  bool _listEquals(List<String>? a, List<String>? b) {
-    if (a == null && b == null) return true;
-    if (a == null || b == null) return false;
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
-  @override
-  int get hashCode =>
-      query.hashCode ^
-      yearFrom.hashCode ^
-      yearTo.hashCode ^
-      languages.hashCode ^
-      extensions.hashCode ^
-      order.hashCode ^
-      page.hashCode ^
-      limit.hashCode;
 }
 
-/// Book details provider
+class SearchState {
+  final List<Book> books;
+  final int currentPage;
+  final int totalPages;
+  final bool isLoading;
+  final bool isLoadingMore;
+  final bool hasSearched;
+
+  const SearchState({
+    this.books = const [],
+    this.currentPage = 1,
+    this.totalPages = 1,
+    this.isLoading = false,
+    this.isLoadingMore = false,
+    this.hasSearched = false,
+  });
+
+  SearchState copyWith({
+    List<Book>? books,
+    int? currentPage,
+    int? totalPages,
+    bool? isLoading,
+    bool? isLoadingMore,
+    bool? hasSearched,
+  }) {
+    return SearchState(
+      books: books ?? this.books,
+      currentPage: currentPage ?? this.currentPage,
+      totalPages: totalPages ?? this.totalPages,
+      isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      hasSearched: hasSearched ?? this.hasSearched,
+    );
+  }
+}
+
+class SearchNotifier extends StateNotifier<SearchState> {
+  final ZLibraryApi _api;
+  SearchParams? _lastParams;
+
+  SearchNotifier(this._api) : super(const SearchState());
+
+  Future<void> search(SearchParams params) async {
+    _lastParams = params;
+    state = const SearchState(isLoading: true, hasSearched: true);
+
+    try {
+      final response = await _api.search(
+        message: params.query,
+        yearFrom: params.yearFrom,
+        yearTo: params.yearTo,
+        languages: params.languages,
+        extensions: params.extensions,
+        order: params.order,
+        page: 1,
+        limit: params.limit,
+      );
+
+      final totalPages = response.meta?['total_pages'] ?? 1;
+      state = SearchState(
+        books: response.data ?? [],
+        currentPage: 1,
+        totalPages: totalPages is int ? totalPages : 1,
+        hasSearched: true,
+      );
+    } catch (e) {
+      state = const SearchState(hasSearched: true);
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (_lastParams == null ||
+        state.isLoadingMore ||
+        state.currentPage >= state.totalPages) return;
+
+    final nextPage = state.currentPage + 1;
+    state = state.copyWith(isLoadingMore: true);
+
+    try {
+      final response = await _api.search(
+        message: _lastParams!.query,
+        yearFrom: _lastParams!.yearFrom,
+        yearTo: _lastParams!.yearTo,
+        languages: _lastParams!.languages,
+        extensions: _lastParams!.extensions,
+        order: _lastParams!.order,
+        page: nextPage,
+        limit: _lastParams!.limit,
+      );
+
+      state = state.copyWith(
+        books: [...state.books, ...response.data ?? []],
+        currentPage: nextPage,
+        isLoadingMore: false,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoadingMore: false);
+    }
+  }
+
+  void reset() {
+    _lastParams = null;
+    state = const SearchState();
+  }
+}
+
+final searchProvider =
+    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+  final api = ref.watch(zlibraryApiProvider);
+  return SearchNotifier(api);
+});
+
+// ── Book Details ────────────────────────────────────────────────────
+
 final bookDetailsProvider =
     FutureProvider.family<Book?, BookIdentifier>((ref, identifier) async {
   final api = ref.watch(zlibraryApiProvider);
-  
   final response =
       await api.getBookInfo(identifier.bookId, identifier.hashId);
-
-  final success = response['success'];
-  if ((success == true || success == 1) && response.containsKey('book')) {
-    return Book.fromJson(response['book']);
-  }
-  
-  return null;
+  return response.data;
 });
 
 class BookIdentifier {
@@ -120,52 +167,50 @@ class BookIdentifier {
   int get hashCode => bookId.hashCode ^ hashId.hashCode;
 }
 
-/// Most popular books provider
+// ── Book Lists ──────────────────────────────────────────────────────
+
 final mostPopularBooksProvider = FutureProvider<List<Book>>((ref) async {
   final api = ref.watch(zlibraryApiProvider);
-  
   final response = await api.getMostPopular();
-
-  final success = response['success'];
-  if ((success == true || success == 1) && response.containsKey('books')) {
-    final booksData = response['books'] as List<dynamic>;
-    return booksData.map((json) => Book.fromJson(json)).toList();
-  }
-  
-  return [];
+  return response.data ?? [];
 });
 
-/// User recommended books provider (for Trending section)
 final recommendedBooksProvider = FutureProvider<List<Book>>((ref) async {
   final api = ref.watch(zlibraryApiProvider);
-  
   final response = await api.getUserRecommended();
-
-  final success = response['success'];
-  if ((success == true || success == 1) && response.containsKey('books')) {
-    final booksData = response['books'] as List<dynamic>;
-    return booksData.map((json) => Book.fromJson(json)).toList();
-  }
-  
-  return [];
+  return response.data ?? [];
 });
 
-/// Recently added books provider
+/// 首页混合推荐：并发拉 z站 + WeRead，合并为 DisplayBook 列表。
+/// z站 失败/未登录时 graceful fallback 到仅 WeRead。
+final homeRecommendedProvider = Provider<AsyncValue<List<DisplayBook>>>((ref) {
+  final zlibAsync = ref.watch(recommendedBooksProvider);
+  final wereadAsync = ref.watch(wereadRecommendProvider);
+
+  // 两个来源独立，任一成功即显示
+  final zlibBooks = zlibAsync.whenData(
+    (books) => books.map((b) => b.toDisplay()).toList(),
+  ).valueOrNull ?? <DisplayBook>[];
+
+  final wereadBooks = wereadAsync.whenData(
+    (books) => books.map((b) => b.toDisplay()).toList(),
+  ).valueOrNull ?? <DisplayBook>[];
+
+  if (zlibAsync is AsyncLoading && wereadAsync is AsyncLoading) {
+    return const AsyncValue.loading();
+  }
+
+  return AsyncValue.data([...zlibBooks, ...wereadBooks]);
+});
+
 final recentBooksProvider = FutureProvider<List<Book>>((ref) async {
   final api = ref.watch(zlibraryApiProvider);
-  
   final response = await api.getRecently();
-
-  final success = response['success'];
-  if ((success == true || success == 1) && response.containsKey('books')) {
-    final booksData = response['books'] as List<dynamic>;
-    return booksData.map((json) => Book.fromJson(json)).toList();
-  }
-  
-  return [];
+  return response.data ?? [];
 });
 
-/// Saved books state notifier
+// ── Saved Books ─────────────────────────────────────────────────────
+
 class SavedBooksNotifier extends StateNotifier<AsyncValue<List<Book>>> {
   final ZLibraryApi _api;
   final StorageService _storage;
@@ -176,15 +221,12 @@ class SavedBooksNotifier extends StateNotifier<AsyncValue<List<Book>>> {
 
   Future<void> loadSavedBooks() async {
     state = const AsyncValue.loading();
-    
+
     try {
       final response = await _api.getUserSaved(limit: 100);
-      
-      final success = response['success'];
-      if ((success == true || success == 1) && response.containsKey('books')) {
-        final booksData = response['books'] as List<dynamic>;
-        final books = booksData.map((json) => Book.fromJson(json)).toList();
-        state = AsyncValue.data(books);
+
+      if (response.success) {
+        state = AsyncValue.data(response.data ?? []);
       } else {
         state = const AsyncValue.data([]);
       }
@@ -193,53 +235,50 @@ class SavedBooksNotifier extends StateNotifier<AsyncValue<List<Book>>> {
     }
   }
 
-  Future<void> saveBook(String bookId) async {
+  Future<bool> saveBook(String bookId) async {
     try {
-      await _api.saveBook(bookId);
+      final response = await _api.saveBook(bookId);
+      if (!response.success) return false;
       await _storage.addFavorite(bookId);
-      await loadSavedBooks(); // Refresh list
+      await loadSavedBooks();
+      return true;
     } catch (e) {
-      // Handle error
+      return false;
     }
   }
 
-  Future<void> unsaveBook(String bookId) async {
+  Future<bool> unsaveBook(String bookId) async {
     try {
-      await _api.unsaveUserBook(bookId);
+      final response = await _api.unsaveUserBook(bookId);
+      if (!response.success) return false;
       await _storage.removeFavorite(bookId);
-      await loadSavedBooks(); // Refresh list
+      await loadSavedBooks();
+      return true;
     } catch (e) {
-      // Handle error
+      return false;
     }
   }
 }
 
-/// Saved books provider
 final savedBooksProvider =
     StateNotifierProvider<SavedBooksNotifier, AsyncValue<List<Book>>>((ref) {
   final api = ref.watch(zlibraryApiProvider);
-  final storage = StorageService();
+  final storage = ref.watch(storageServiceProvider);
   return SavedBooksNotifier(api, storage);
 });
 
-/// Downloaded books provider (similar to saved books)
+// ── Downloaded Books ────────────────────────────────────────────────
+
 final downloadedBooksProvider = FutureProvider<List<Book>>((ref) async {
   final api = ref.watch(zlibraryApiProvider);
-  
   final response = await api.getUserDownloaded(limit: 100);
-
-  final success = response['success'];
-  if ((success == true || success == 1) && response.containsKey('books')) {
-    final booksData = response['books'] as List<dynamic>;
-    return booksData.map((json) => Book.fromJson(json)).toList();
-  }
-  
-  return [];
+  return response.data ?? [];
 });
 
-/// Check if a book is favorited
+// ── Favorites Check ─────────────────────────────────────────────────
+
 final isBookFavoritedProvider =
     FutureProvider.family<bool, String>((ref, bookId) async {
-  final storage = StorageService();
+  final storage = ref.watch(storageServiceProvider);
   return await storage.isFavorite(bookId);
 });

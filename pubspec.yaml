@@ -16,10 +16,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.3+3
+version: 1.2.1+10201
 
 environment:
-  sdk: ^3.8.1
+  sdk: ^3.10.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -43,7 +43,6 @@ dependencies:
   
   # State Management
   flutter_riverpod: ^2.5.1
-  riverpod_annotation: ^2.3.5
   
   # HTTP & Network
   dio: ^5.4.3+1
@@ -52,24 +51,33 @@ dependencies:
   http: ^1.2.0
   
   # Storage
-  shared_preferences: ^2.2.3
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+
   path_provider: ^2.1.4
-  permission_handler: ^11.3.0
+  permission_handler: ^12.0.1
   open_filex: ^4.4.0
-  share_plus: ^7.2.2
+  share_plus: ^13.1.0
   url_launcher: ^6.2.5
-  unity_ads_plugin: ^0.3.12
-  package_info_plus: ^8.0.0
-  device_info_plus: ^10.0.0
-  file_picker: ^8.0.0
+  android_intent_plus: ^6.0.0
+
+  package_info_plus: ^10.1.0
+  device_info_plus: ^13.1.0
+  file_picker: ^12.0.0-beta.4
   flutter_inappwebview: ^6.1.5
   flutter_inappwebview_windows: ^0.6.0
   
   # Data Models
   freezed_annotation: ^2.4.1
   json_annotation: ^4.8.1
+  mobile_scanner: ^7.1.4
+  qr_flutter: ^4.1.0
+
+  # 私有 Z-API 客户端 + 数据模型,不对外开放。源码在 vendor/olib_api_plugin/
+  # （本地 + CI 都从 private repo 拉取，vendor/ 在 .gitignore 里）
+  olib_api_plugin:
+    path: vendor/olib_api_plugin
+  receive_sharing_intent: ^1.8.0
 
 dev_dependencies:
   flutter_test:
@@ -80,8 +88,6 @@ dev_dependencies:
   
   # Code Generation
   build_runner: ^2.4.9
-  riverpod_generator: ^2.4.0
-  hive_generator: ^2.0.1
   freezed: ^2.5.2
   json_serializable: ^6.7.1
   
@@ -113,7 +119,7 @@ msix_config:
   publisher: CN=Olib Team
   publisher_display_name: Olib Team
   identity_name: com.olib.mobile
-  msix_version: 1.0.3.0
+  msix_version: 1.2.1.0
   logo_path: assets/icons/z.png
   capabilities: internetClient, internetClientServer
   languages: en-us, zh-cn, ja-jp, ko-kr
@@ -131,7 +137,6 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/images/
     - assets/icons/
 
   # An image asset can refer to one or more resolution-specific "variants", see

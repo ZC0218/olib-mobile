@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:async';
-import 'dart:io';
 import '../providers/domain_provider.dart';
+import '../providers/speed_test_provider.dart';
 import '../theme/app_colors.dart';
 
 class DomainSelector extends ConsumerWidget {
@@ -18,22 +17,17 @@ class DomainSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentDomain = ref.watch(domainProvider);
-    final domainList = ref.watch(domainListProvider);
+    final domains = ref.watch(domainListProvider);
 
-    // Find label for current domain
-    String currentLabel = 'Custom';
-    for (final entry in domainList.entries) {
-      if (entry.value == currentDomain) {
-        currentLabel = entry.key;
-        break;
-      }
-    }
+    // Find line number for current domain
+    final idx = domains.indexOf(currentDomain);
+    final label = idx >= 0 ? 'Line ${idx + 1}' : 'Custom';
 
     if (compact) {
       return IconButton(
         icon: const Icon(Icons.dns_outlined),
-        color: color ?? AppColors.textPrimary,
-        tooltip: 'Switch Network ($currentLabel)',
+        color: color ?? Theme.of(context).colorScheme.onSurface,
+        tooltip: 'Switch Network ($label)',
         onPressed: () => _showDialog(context),
       );
     }
@@ -44,10 +38,10 @@ class DomainSelector extends ConsumerWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: (color ?? AppColors.primary).withOpacity(0.1),
+          color: (color ?? AppColors.primary).withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
-            color: (color ?? AppColors.primary).withOpacity(0.3),
+            color: (color ?? AppColors.primary).withValues(alpha:0.3),
           ),
         ),
         child: Row(
@@ -60,7 +54,7 @@ class DomainSelector extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              currentLabel,
+              label,
               style: TextStyle(
                 color: color ?? AppColors.primary,
                 fontWeight: FontWeight.w600,
@@ -86,187 +80,109 @@ class DomainSelector extends ConsumerWidget {
   }
 }
 
-class DomainSelectionDialog extends ConsumerStatefulWidget {
+class DomainSelectionDialog extends ConsumerWidget {
   const DomainSelectionDialog({super.key});
 
   @override
-  ConsumerState<DomainSelectionDialog> createState() => _DomainSelectionDialogState();
-}
-
-class _DomainSelectionDialogState extends ConsumerState<DomainSelectionDialog> {
-  final Map<String, bool?> _statusMap = {};
-
-  @override
-  void initState() {
-    super.initState();
-    // Start checking immediately
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAllDomains();
-    });
-  }
-
-  Future<void> _checkAllDomains() async {
-    final domainList = ref.read(domainListProvider);
-    for (final domain in domainList.values) {
-      _checkDomain(domain);
-    }
-  }
-
-  Future<void> _checkDomain(String domain) async {
-    try {
-      // Check API endpoint - returns {"success":1,...} when working
-      final uri = Uri.parse('https://$domain/eapi/info/languages');
-      
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 8);
-      
-      try {
-        final request = await client.getUrl(uri);
-        final response = await request.close().timeout(
-          const Duration(seconds: 10),
-        );
-        
-        // Read response body
-        final bodyBytes = await response.expand((chunk) => chunk).toList();
-        final body = String.fromCharCodes(bodyBytes);
-        
-        debugPrint('Domain $domain: status=${response.statusCode}, body=${body.substring(0, body.length > 100 ? 100 : body.length)}...');
-        
-        if (mounted) {
-          setState(() {
-            // Check if response contains "success":1 or HTTP 2xx
-            final isSuccess = body.contains('"success":1') || 
-                              body.contains('"success": 1') ||
-                              (response.statusCode >= 200 && response.statusCode < 300);
-            _statusMap[domain] = isSuccess;
-          });
-        }
-      } catch (e) {
-        debugPrint('Domain check failed for $domain: $e');
-        if (mounted) setState(() => _statusMap[domain] = false);
-      } finally {
-        client.close();
-      }
-    } catch (e) {
-      debugPrint('Domain check error for $domain: $e');
-      if (mounted) setState(() => _statusMap[domain] = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final currentDomain = ref.watch(domainProvider);
-    final domainList = ref.watch(domainListProvider);
+    final domains = ref.watch(domainListProvider);
+    final speedState = ref.watch(speedTestProvider);
     final locale = Localizations.localeOf(context).languageCode;
     final isZh = locale == 'zh';
 
+    // Build lookup: domain -> DomainTestResult
+    final Map<String, DomainTestResult> resultMap = {};
+    for (final r in speedState.results) {
+      resultMap[r.domain] = r;
+    }
+
     return AlertDialog(
-      title: Text(isZh ? '选择线路' : 'Select Network'),
+      titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              isZh ? '选择线路' : 'Select Network',
+              style: const TextStyle(fontSize: 18),
+            ),
+          ),
+          // Progress / count badge
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: speedState.testing
+                ? Row(
+                    key: const ValueKey('testing'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          value: speedState.results.isEmpty
+                              ? null
+                              : speedState.testedCount /
+                                  speedState.results.length,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${speedState.testedCount}/${speedState.results.length}',
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  )
+                : Text(
+                    key: const ValueKey('done'),
+                    '${speedState.onlineCount}/${speedState.results.length} ✓',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: speedState.onlineCount > 0
+                          ? Colors.green
+                          : Colors.grey,
+                    ),
+                  ),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: double.maxFinite,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            ...domainList.entries.map((entry) {
-              final status = _statusMap[entry.value];
-              Color statusColor = Colors.grey.withOpacity(0.3);
-              if (status == true) statusColor = Colors.green;
-              if (status == false) statusColor = Colors.red;
-
-              return RadioListTile<String>(
-                title: Row(
-                  children: [
-                    Expanded(child: Text(entry.key)),
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: statusColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ),
-                // Domain hidden - only show name
-                value: entry.value,
-                groupValue: currentDomain,
-                onChanged: (value) {
-                  if (value != null) {
-                    ref.read(domainProvider.notifier).setDomain(value);
-                    Navigator.pop(context);
-                  }
-                },
-              );
-            }),
-            // Custom Domain Item
-            Builder(
-              builder: (context) {
-                final isCustom = !domainList.containsValue(currentDomain);
-                final status = isCustom ? _statusMap[currentDomain] : null;
-                
-                Color statusColor = Colors.grey.withOpacity(0.3);
-                if (status == true) statusColor = Colors.green;
-                if (status == false) statusColor = Colors.red;
-
-                // Trigger check if custom and unknown
-                if (isCustom && !_statusMap.containsKey(currentDomain)) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _checkDomain(currentDomain);
-                  });
-                }
-
-                return RadioListTile<String>(
-                  title: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          isCustom ? 'Custom' : 'Custom Domain',
-                          style: TextStyle(
-                            color: isCustom ? AppColors.textPrimary : AppColors.textSecondary,
-                            fontWeight: isCustom ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                      ),
-                      if (isCustom)
-                        Container(
-                          width: 10,
-                          height: 10,
-                          margin: const EdgeInsets.only(left: 8),
-                          decoration: BoxDecoration(
-                            color: statusColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                    ],
-                  ),
-                  // Domain hidden - only show status
-                  subtitle: isCustom 
-                      ? Text(isZh ? '自定义代理' : 'Custom Proxy') 
-                      : Text(isZh ? '点击设置自定义线路' : 'Tap to set custom domain'),
-                  value: isCustom ? currentDomain : 'CUSTOM_PLACEHOLDER_KEY',
-                  groupValue: currentDomain,
-                  secondary: IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () {
-                      _showCustomDomainDialog(context, ref);
-                    },
-                  ),
-                  onChanged: (value) {
-                    _showCustomDomainDialog(context, ref);
-                  },
-                );
-              },
-            ),
-          ],
+        height: MediaQuery.of(context).size.height * 0.55,
+        child: ListView.builder(
+          itemCount: speedState.results.length + 1, // +1 for custom
+          itemBuilder: (context, index) {
+            if (index < speedState.results.length) {
+              final result = speedState.results[index];
+              // Find the original index in the domain list for "Line N" label
+              final lineIndex = domains.indexOf(result.domain);
+              final lineLabel = lineIndex >= 0
+                  ? 'Line ${lineIndex + 1}'
+                  : result.domain;
+              return _buildDomainTile(
+                context, ref, result, lineLabel, currentDomain);
+            }
+            // Last item: custom domain
+            return _buildCustomTile(context, ref, currentDomain, domains, isZh);
+          },
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () {
-            setState(() => _statusMap.clear());
-            _checkAllDomains();
-          },
-          child: Text(isZh ? '重新检测' : 'Re-check'),
+          onPressed: speedState.testing
+              ? null
+              : () => ref.read(speedTestProvider.notifier).runTest(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.speed,
+                  size: 16, color: speedState.testing ? Colors.grey : null),
+              const SizedBox(width: 4),
+              Text(isZh ? '重新测速' : 'Re-test'),
+            ],
+          ),
         ),
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -276,8 +192,99 @@ class _DomainSelectionDialogState extends ConsumerState<DomainSelectionDialog> {
     );
   }
 
+  Widget _buildDomainTile(
+    BuildContext context,
+    WidgetRef ref,
+    DomainTestResult result,
+    String label,
+    String currentDomain,
+  ) {
+    final isSelected = result.domain == currentDomain;
+    final latency = result.latencyMs;
+
+    // Status indicator
+    Widget trailing;
+    if (latency == null) {
+      trailing = const SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(strokeWidth: 1.5),
+      );
+    } else if (latency < 0) {
+      trailing = const Icon(Icons.close, size: 16, color: Colors.red);
+    } else {
+      Color latColor;
+      if (latency < 1000) {
+        latColor = Colors.green;
+      } else if (latency < 3000) {
+        latColor = Colors.orange;
+      } else {
+        latColor = Colors.red;
+      }
+      trailing = Text(
+        '${latency}ms',
+        style: TextStyle(
+          fontSize: 12,
+          color: latColor,
+          fontWeight: FontWeight.w600,
+        ),
+      );
+    }
+
+    return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      leading: isSelected
+          ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
+          : const Icon(Icons.circle_outlined, size: 20, color: Colors.grey),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+          color: isSelected ? AppColors.primary : null,
+        ),
+      ),
+      trailing: trailing,
+      onTap: () {
+        ref.read(domainProvider.notifier).setDomain(result.domain);
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  Widget _buildCustomTile(
+    BuildContext context,
+    WidgetRef ref,
+    String currentDomain,
+    List<String> domains,
+    bool isZh,
+  ) {
+    final isCustom = !domains.contains(currentDomain);
+
+    return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      leading: isCustom
+          ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
+          : const Icon(Icons.edit_outlined, size: 20, color: Colors.grey),
+      title: Text(
+        isCustom
+            ? (isZh ? '自定义线路' : 'Custom Line')
+            : (isZh ? '自定义线路...' : 'Custom line...'),
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: isCustom ? FontWeight.w700 : FontWeight.normal,
+          color: isCustom ? AppColors.primary : Colors.grey,
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 18),
+      onTap: () => _showCustomDomainDialog(context, ref),
+    );
+  }
+
   void _showCustomDomainDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController(); // Empty - don't show current domain
+    final controller = TextEditingController();
     final locale = Localizations.localeOf(context).languageCode;
     final isZh = locale == 'zh';
 
@@ -289,7 +296,7 @@ class _DomainSelectionDialogState extends ConsumerState<DomainSelectionDialog> {
           controller: controller,
           decoration: InputDecoration(
             labelText: isZh ? '域名地址' : 'Domain URL',
-            hintText: 'e.g., z-library.sk',
+            hintText: 'e.g., example.com',
           ),
         ),
         actions: [
@@ -300,7 +307,9 @@ class _DomainSelectionDialogState extends ConsumerState<DomainSelectionDialog> {
           ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty) {
-                ref.read(domainProvider.notifier).setCustomDomain(controller.text);
+                ref
+                    .read(domainProvider.notifier)
+                    .setCustomDomain(controller.text);
                 Navigator.pop(context);
               }
             },

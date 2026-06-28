@@ -1,0 +1,531 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/backend_auth_provider.dart';
+import '../../theme/app_colors.dart';
+
+/// 微信扫码授权页面
+class QrAuthScreen extends ConsumerStatefulWidget {
+  const QrAuthScreen({super.key});
+
+  @override
+  ConsumerState<QrAuthScreen> createState() => _QrAuthScreenState();
+}
+
+/// 页面所处的阶段。
+/// - [recovering] 24h 内授权过 → 先静默 register+/status 尝试恢复，不弹 QR
+/// - [qr] 走正常 register → fetchQrCode → 轮询的二维码流程
+enum _Phase { recovering, qr }
+
+class _QrAuthScreenState extends ConsumerState<QrAuthScreen> {
+  bool _isLoading = true;
+  String? _initError;
+  _Phase _phase = _Phase.qr;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAuth();
+  }
+
+  Future<void> _initAuth() async {
+    if (!mounted) return;
+
+    final notifier = ref.read(backendAuthProvider.notifier);
+
+    // 24h 内授权过 → 先静默恢复，避免每次都让用户再扫一遍
+    if (notifier.isWithinRecoveryWindow) {
+      setState(() {
+        _phase = _Phase.recovering;
+        _isLoading = true;
+        _initError = null;
+      });
+
+      final recovered = await notifier.tryRecoverAuth();
+      if (!mounted) return;
+      if (recovered) {
+        Navigator.pop(context, true);
+        return;
+      }
+      // 恢复失败 → 回退到 QR 流程
+    }
+
+    setState(() {
+      _phase = _Phase.qr;
+      _isLoading = true;
+      _initError = null;
+    });
+
+    try {
+      // 1. 确保已注册设备
+      final authState = ref.read(backendAuthProvider);
+      if (authState.jwt == null) {
+        await notifier.register();
+      }
+
+      // 2. 检查注册结果
+      final afterRegister = ref.read(backendAuthProvider);
+      if (afterRegister.error != null) {
+        if (mounted) setState(() {
+          _isLoading = false;
+          _initError = afterRegister.error;
+        });
+        return;
+      }
+
+      // 3. 如果已授权（极少见，比如 _refreshStatusFromServer 已经把状态拉成 authorized），直接返回
+      if (afterRegister.isAuthorized) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      // 4. 获取二维码
+      await notifier.fetchQrCode();
+
+      // 5. 再次检查（可能 fetchQrCode 发现已授权）
+      final afterQr = ref.read(backendAuthProvider);
+      if (afterQr.isAuthorized) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      // 6. 开始轮询
+      notifier.startPolling();
+    } catch (e) {
+      _initError = e.toString();
+    }
+
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _refreshQrCode() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _initError = null;
+    });
+
+    try {
+      final notifier = ref.read(backendAuthProvider.notifier);
+      notifier.stopPolling();
+      await notifier.fetchQrCode();
+
+      final afterQr = ref.read(backendAuthProvider);
+      if (afterQr.isAuthorized) {
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      notifier.startPolling();
+    } catch (e) {
+      _initError = e.toString();
+    }
+
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  @override
+  void dispose() {
+    // 页面关闭时停止轮询
+    try {
+      ref.read(backendAuthProvider.notifier).stopPolling();
+    } catch (_) {}
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    final isZh = locale == 'zh';
+    final authState = ref.watch(backendAuthProvider);
+
+    // 授权成功 → 自动关闭页面
+    if (authState.isAuthorized && !_isLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pop(context, true);
+      });
+    }
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.primary.withValues(alpha:0.08),
+              Colors.white,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // App Bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.close_rounded,
+                          color: Theme.of(context).colorScheme.onSurface),
+                      onPressed: () => Navigator.pop(context, false),
+                    ),
+                    Expanded(
+                      child: Text(
+                        isZh ? '扫码授权' : 'Scan to Authorize',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: _phase == _Phase.recovering
+                        ? _buildRecoveringBody(isZh)
+                        : _buildQrBody(authState, isZh),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 恢复中：上次授权过且在 24h 窗口内，先静默 register+/status 看看后端
+  /// 还认不认这台设备。这里不暴露二维码，避免用户重复扫码。
+  Widget _buildRecoveringBody(bool isZh) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: cs.primary.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.verified_user_outlined,
+            size: 36,
+            color: cs.primary,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          isZh ? '正在校验授权…' : 'Verifying authorization…',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurface,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          isZh
+              ? '检测到你最近授权过，正在确认会话…'
+              : "You authorized recently — checking your session…",
+          style: TextStyle(
+            fontSize: 13,
+            color: cs.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 28),
+        SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            color: cs.primary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// QR 流程主体：原来的图标 + 标题 + 二维码 + 状态提示。
+  /// 静默恢复失败时也回退到这里（提示文案微调一下，告诉用户为什么）。
+  Widget _buildQrBody(BackendAuthState authState, bool isZh) {
+    final cs = Theme.of(context).colorScheme;
+    // 进入 QR 时若曾经授权过（即从 recovering 回退来的），副标题改成提示重新扫码。
+    final notifier = ref.read(backendAuthProvider.notifier);
+    final reauthing = notifier.lastAuthorizedAt() != null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 图标
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: const Color(0xFF07C160).withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.qr_code_scanner_rounded,
+            size: 36,
+            color: Color(0xFF07C160),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // 标题
+        Text(
+          isZh
+              ? (reauthing ? '需要重新扫码授权' : '使用微信扫描下方二维码')
+              : (reauthing
+                  ? 'Please scan again to re-authorize'
+                  : 'Scan the QR code with WeChat'),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: cs.onSurface,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isZh
+              ? (reauthing
+                  ? '会话已失效，扫码后即可继续使用'
+                  : '关注公众号即可解锁 AI 寻书功能')
+              : (reauthing
+                  ? 'Session expired — scan to continue'
+                  : 'Follow our account to unlock AI find-books'),
+          style: TextStyle(
+            fontSize: 14,
+            color: cs.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 32),
+
+        // 二维码区域
+        _buildQrSection(authState, isZh),
+
+        const SizedBox(height: 24),
+
+        // 状态提示
+        _buildStatusHint(authState, isZh),
+
+        const SizedBox(height: 40),
+      ],
+    );
+  }
+
+  Widget _buildQrSection(BackendAuthState authState, bool isZh) {
+    // 初始化中
+    if (_isLoading) {
+      return _buildQrContainer(
+        child: const SizedBox(
+          width: 40,
+          height: 40,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+      );
+    }
+
+    // 初始化错误
+    if (_initError != null) {
+      return _buildQrContainer(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+            const SizedBox(height: 12),
+            Text(
+              _initError!,
+              style: TextStyle(color: Colors.red[400], fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _initAuth,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(isZh ? '重试' : 'Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Provider 级别的错误
+    if (authState.error != null && authState.qrUrl == null) {
+      return _buildQrContainer(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+            const SizedBox(height: 12),
+            Text(
+              authState.error!,
+              style: TextStyle(color: Colors.red[400], fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _refreshQrCode,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(isZh ? '重试' : 'Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 有二维码
+    if (authState.qrUrl != null && authState.qrUrl!.isNotEmpty) {
+      return Column(
+        children: [
+          _buildQrContainer(
+            child: Image.network(
+              authState.qrUrl!,
+              width: 220,
+              height: 220,
+              fit: BoxFit.contain,
+              loadingBuilder: (_, child, loading) {
+                if (loading == null) return child;
+                return const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                );
+              },
+              errorBuilder: (_, __, ___) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.broken_image_rounded,
+                      size: 48, color: Colors.grey[400]),
+                  const SizedBox(height: 8),
+                  Text(
+                    isZh ? '图片加载失败' : 'Image loading failed',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: _refreshQrCode,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: Text(
+              isZh ? '刷新二维码' : 'Refresh QR Code',
+              style: const TextStyle(fontSize: 13),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 兜底
+    return _buildQrContainer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            isZh ? '正在加载...' : 'Loading...',
+            style: TextStyle(color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: _initAuth,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: Text(isZh ? '重试' : 'Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQrContainer({required Widget child}) {
+    return Container(
+      width: 260,
+      height: 260,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha:0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(child: child),
+    );
+  }
+
+  Widget _buildStatusHint(BackendAuthState authState, bool isZh) {
+    if (authState.isAuthorized) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.check_circle, color: Color(0xFF07C160), size: 20),
+          const SizedBox(width: 8),
+          Text(
+            isZh ? '授权成功！' : 'Authorized!',
+            style: const TextStyle(
+              color: Color(0xFF07C160),
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (authState.isPolling) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            isZh ? '等待扫码中...' : 'Waiting for scan...',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (authState.error != null) {
+      return Text(
+        authState.error!,
+        style: TextStyle(color: Colors.orange[700], fontSize: 13),
+        textAlign: TextAlign.center,
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+}

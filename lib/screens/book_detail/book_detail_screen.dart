@@ -1,29 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:awesome_dialog/awesome_dialog.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../../models/book.dart';
+import 'package:olib_api_plugin/olib_api_plugin.dart';
+import '../../models/display_book.dart';
 import '../../providers/books_provider.dart';
 import '../../providers/download_provider.dart';
-import '../../providers/domain_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
-import '../../l10n/app_localizations.dart';
-import '../../services/update_service.dart';
-import '../../routes/app_routes.dart';
-import '../similar/similar_books_screen.dart';
-import '../reader/reader_screen.dart';
+import 'book_detail_args.dart';
+import 'widgets/book_hero_section.dart';
+import 'widgets/book_info_section.dart';
+import 'widgets/book_action_bar.dart';
 
 class BookDetailScreen extends ConsumerWidget {
   const BookDetailScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final book = ModalRoute.of(context)!.settings.arguments as Book;
-
+    // 兼容两种 arg：BookDetailArgs（带 fromAi）和直接的 Book（旧调用方）。
+    final raw = ModalRoute.of(context)!.settings.arguments;
+    final BookDetailArgs args = raw is BookDetailArgs
+        ? raw
+        : BookDetailArgs(book: raw as Book);
+    final book = args.book;
+    final fromAi = args.fromAi;
     final tasks = ref.watch(downloadProvider);
+
     DownloadTask? downloadTask;
     try {
       downloadTask = tasks.firstWhere((t) => t.id == book.id.toString());
@@ -31,303 +31,38 @@ class BookDetailScreen extends ConsumerWidget {
 
     final isDownloading = downloadTask?.status == DownloadStatus.downloading;
     final isCompleted = downloadTask?.status == DownloadStatus.completed;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Watch favorite state
+    final favAsync = ref.watch(isBookFavoritedProvider(book.id.toString()));
+    final isFavorited = favAsync.valueOrNull ?? false;
 
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 300,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: book.cover != null
-                  ? CachedNetworkImage(
-                      imageUrl: book.cover!,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      color: AppColors.textSecondary.withOpacity(0.2),
-                      child: const Icon(Icons.book, size: 100),
-                    ),
-            ),
-          ),
-          
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    book.title,
-                    style: Theme.of(context).textTheme.displaySmall,
-                  ),
-                  
-                  const SizedBox(height: 8),
-                  
-                  if (book.author != null)
-                    Text(
-                      'by ${book.author}',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: AppColors.primary,
-                          ),
-                    ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Book Info
-                  _buildInfoRow(context, Icons.calendar_today, AppLocalizations.of(context).get('year'), book.year?.toString()),
-                  _buildInfoRow(context, Icons.language, AppLocalizations.of(context).get('language'), book.language),
-                  _buildInfoRow(context, Icons.description, AppLocalizations.of(context).get('pages'), book.pages?.toString()),
-                  _buildInfoRow(context, Icons.business, AppLocalizations.of(context).get('publisher'), book.publisher),
-                  _buildInfoRow(context, Icons.folder, 'Format', book.extension?.toUpperCase()),
-                  _buildInfoRow(context, Icons.storage, AppLocalizations.of(context).get('file_size'), book.filesizeString),
-                  
-                  const SizedBox(height: 24),
-                  
-                  if (book.description != null && book.description!.isNotEmpty) ...[
-                    Text(
-                      AppLocalizations.of(context).get('description'),
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      book.description!,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                  
-                  // Action Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: isDownloading
-                              ? null
-                              : () async {
-                                  // Check if app is blocked due to force update
-                                  if (UpdateService.isBlocked && !isCompleted) {
-                                    final locale = Localizations.localeOf(context).languageCode;
-                                    final isZh = locale == 'zh';
-                                    
-                                    AwesomeDialog(
-                                      context: context,
-                                      dialogType: DialogType.warning,
-                                      animType: AnimType.bottomSlide,
-                                      title: isZh ? '功能已禁用' : 'Feature Disabled',
-                                      desc: isZh 
-                                          ? '当前版本已过期，请更新到最新版本后使用下载功能。'
-                                          : 'This version is outdated. Please update to use download.',
-                                      btnOkText: isZh ? '立即更新' : 'Update Now',
-                                      btnOkColor: AppColors.primary,
-                                      btnOkOnPress: () {
-                                        if (UpdateService.downloadUrl != null) {
-                                          launchUrl(
-                                            Uri.parse(UpdateService.downloadUrl!),
-                                            mode: LaunchMode.externalApplication,
-                                          );
-                                        }
-                                      },
-                                    ).show();
-                                    return;
-                                  }
-                                  
-                                  if (isCompleted && downloadTask?.filePath != null) {
-                                    OpenFilex.open(downloadTask!.filePath!);
-                                  } else {
-                                    // Check if file already exists
-                                    final existingPath = await ref
-                                        .read(downloadProvider.notifier)
-                                        .checkFileExists(book);
-                                    
-                                    if (existingPath != null && context.mounted) {
-                                      final locale = Localizations.localeOf(context).languageCode;
-                                      final isZh = locale == 'zh';
-                                      
-                                      // Show dialog to warn user
-                                      AwesomeDialog(
-                                        context: context,
-                                        dialogType: DialogType.info,
-                                        animType: AnimType.bottomSlide,
-                                        title: isZh ? '文件已存在' : 'File Already Exists',
-                                        desc: isZh 
-                                            ? '这本书已经下载过了。\n\n您可以打开现有文件或重新下载。'
-                                            : 'This book has already been downloaded.\n\nYou can open the existing file or download again.',
-                                        btnCancelText: isZh ? '打开文件' : 'Open File',
-                                        btnCancelColor: Colors.green,
-                                        btnCancelOnPress: () {
-                                          OpenFilex.open(existingPath);
-                                        },
-                                        btnOkText: isZh ? '重新下载' : 'Download Again',
-                                        btnOkColor: AppColors.primary,
-                                        btnOkOnPress: () {
-                                          ref
-                                              .read(downloadProvider.notifier)
-                                              .startDownload(book);
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                                content: Text(AppLocalizations.of(context).get('downloading'))),
-                                          );
-                                        },
-                                      ).show();
-                                      return;
-                                    }
-                                    
-                                    ref
-                                        .read(downloadProvider.notifier)
-                                        .startDownload(book);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content: Text(AppLocalizations.of(context).get('downloading'))),
-                                    );
-                                  }
-                                },
-                          icon: Icon(isCompleted
-                              ? Icons.folder_open
-                              : (isDownloading
-                                  ? Icons.downloading
-                                  : Icons.download)),
-                          label: Text(isCompleted
-                              ? AppLocalizations.of(context).get('open_file')
-                              : (isDownloading
-                                  ? '${AppLocalizations.of(context).get('downloading')} ${(downloadTask!.progress * 100).toStringAsFixed(0)}%'
-                                  : AppLocalizations.of(context).get('download'))),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isCompleted
-                                ? Colors.green
-                                : AppColors.primary,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
-                      
-                      const SizedBox(width: 12),
-                      
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          await ref.read(savedBooksProvider.notifier).saveBook(book.id.toString());
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Added to favorites')),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.favorite_outline),
-                        label: Text(AppLocalizations.of(context).get('like')),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  // Similar Books Button
-                  if (book.hash != null && book.hash!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pushNamed(
-                            AppRoutes.similarBooks,
-                            arguments: SimilarBooksArgs(
-                              bookId: book.id,
-                              hashId: book.hash!,
-                              bookTitle: book.title,
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.auto_awesome),
-                        label: Text(AppLocalizations.of(context).get('similar_books')),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary),
-                        ),
-                      ),
-                    ),
-                  ],
-                  
-                  // Read Online Button
-                  if (book.readOnlineUrl != null && book.readOnlineUrl!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Get user's custom domain and credentials
-                          final customDomain = ref.read(domainProvider);
-                          final authState = ref.read(authProvider);
-                          final user = authState.user;
-                          
-                          // Build the final URL
-                          String url = book.readOnlineUrl!;
-                          
-                          // Remove 'cdn.' prefix if present (e.g., cdn.reader.z-library.sk -> reader.z-library.sk)
-                          url = url.replaceAll(
-                            RegExp(r'cdn\.reader\.'),
-                            'reader.',
-                          );
-                          
-                          // Replace reader.z-library.sk with reader.{customDomain}
-                          url = url.replaceAll(
-                            RegExp(r'reader\.[a-zA-Z0-9.-]+'),
-                            'reader.$customDomain',
-                          );
-                          
-                          // Also replace any z-library.sk references in the URL
-                          url = url.replaceAll(
-                            RegExp(r'z-library\.[a-zA-Z]+'),
-                            customDomain,
-                          );
-                          
-                          // Append user credentials if available
-                          if (user != null) {
-                            final separator = url.contains('?') ? '&' : '?';
-                            url = '$url${separator}remix_userkey=${user.remixUserkey}&remix_userid=${user.id}';
-                          }
-                          
-                          // Navigate to ReaderScreen
-                          Navigator.of(context).pushNamed(
-                            AppRoutes.reader,
-                            arguments: ReaderArgs(
-                              url: url,
-                              title: book.title,
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.menu_book),
-                        label: Text(AppLocalizations.of(context).get('read')),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
+      backgroundColor: isDark ? const Color(0xFF121212) : AppColors.background,
+      // ── Sticky Bottom Action Bar ──
+      bottomNavigationBar: BookActionBar(
+        book: book,
+        downloadTask: downloadTask,
+        isDownloading: isDownloading,
+        isCompleted: isCompleted,
+        isDark: isDark,
+        fromAi: fromAi,
       ),
-    );
-  }
-
-  Widget _buildInfoRow(BuildContext context, IconData icon, String label, String? value) {
-    if (value == null || value.isEmpty) return const SizedBox.shrink();
-    
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppColors.primary),
-          const SizedBox(width: 12),
-          Text(
-            '$label: ',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // ── 1. Hero Section with Glassmorphism ──
+          BookHeroSection(
+            book: book.toDisplay(),
+            isDark: isDark,
+            isFavorited: isFavorited,
           ),
-          Expanded(child: Text(value)),
+
+          // ── 2. Content Body ──
+          BookInfoSection(
+            book: book,
+            isDark: isDark,
+          ),
         ],
       ),
     );

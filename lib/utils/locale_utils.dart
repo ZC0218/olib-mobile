@@ -5,7 +5,7 @@ bool isZhLocale(BuildContext context) {
   return Localizations.localeOf(context).languageCode == 'zh';
 }
 
-/// Get locale key for comparison (e.g., 'en', 'zh', 'zh_TW')
+/// Get locale key for comparison (e.g., 'en', 'zh')
 String? getLocaleKey(Locale? locale) {
   if (locale == null) return null;
   if (locale.countryCode != null && locale.countryCode!.isNotEmpty) {

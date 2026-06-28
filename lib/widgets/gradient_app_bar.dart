@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
 
 class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
@@ -17,25 +16,27 @@ class GradientAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Minimalist AppBar: No gradient, matches scaffold background
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    // Minimalist AppBar: matches scaffold background, theme-driven text color.
     return AppBar(
       title: Text(
         title,
-        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+        style: theme.textTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.bold,
-          color: AppColors.textPrimary,
+          color: cs.onSurface,
         ),
       ),
-      backgroundColor: AppColors.background,
+      backgroundColor: theme.scaffoldBackgroundColor,
       elevation: 0,
       centerTitle: centerTitle,
       leading: leading,
       actions: actions,
-      iconTheme: const IconThemeData(color: AppColors.textPrimary),
+      iconTheme: IconThemeData(color: cs.onSurface),
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1.0),
         child: Container(
-          color: Colors.black.withOpacity(0.05), // Subtle separator
+          color: cs.outlineVariant,
           height: 1.0,
         ),
       ),

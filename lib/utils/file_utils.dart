@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:android_intent_plus/android_intent.dart';
 
 /// Check if platform supports opening folder in file manager
 bool get canOpenFolder {
@@ -12,24 +14,58 @@ bool get canOpenFolder {
 Future<bool> openDownloadFolder() async {
   try {
     if (Platform.isAndroid) {
-      // On Android, open the Olib folder in Downloads
-      final path = '/storage/emulated/0/Download/Olib';
-      final dir = Directory(path);
-      if (await dir.exists()) {
-        final result = await OpenFilex.open(path);
-        return result.type == ResultType.done;
+      // Use Intent to open the Downloads folder in the system file manager
+      try {
+        final intent = AndroidIntent(
+          action: 'android.intent.action.VIEW',
+          data: 'content://com.android.externalstorage.documents/document/primary%3ADownload%2FOlib',
+          type: 'vnd.android.document/directory',
+          flags: <int>[0x10000000], // FLAG_ACTIVITY_NEW_TASK
+        );
+        await intent.launch();
+        return true;
+      } catch (_) {
+        // Fallback: try to open the general Downloads folder
+        try {
+          final intent = AndroidIntent(
+            action: 'android.intent.action.VIEW',
+            data: 'content://com.android.externalstorage.documents/root/primary%3ADownload',
+            type: 'vnd.android.document/root',
+            flags: <int>[0x10000000],
+          );
+          await intent.launch();
+          return true;
+        } catch (_) {
+          // Last fallback: open the system file manager app
+          try {
+            final intent = AndroidIntent(
+              action: 'android.intent.action.MAIN',
+              category: 'android.intent.category.APP_FILES',
+              flags: <int>[0x10000000],
+            );
+            await intent.launch();
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
       }
-      // Fallback: try to open the Downloads folder
-      final result = await OpenFilex.open('/storage/emulated/0/Download');
-      return result.type == ResultType.done;
     } else if (Platform.isWindows) {
-      await Process.run('explorer', [Directory.current.path]);
+
+      // Get the actual Downloads folder on Windows
+      final downloadsDir = await getDownloadsDirectory();
+      final path = downloadsDir?.path ?? r'C:\Users\Public\Downloads';
+      await Process.run('explorer', [path]);
       return true;
     } else if (Platform.isMacOS) {
-      await Process.run('open', [Directory.current.path]);
+      final downloadsDir = await getDownloadsDirectory();
+      final path = downloadsDir?.path ?? '~/Downloads';
+      await Process.run('open', [path]);
       return true;
     } else if (Platform.isLinux) {
-      await Process.run('xdg-open', [Directory.current.path]);
+      final downloadsDir = await getDownloadsDirectory();
+      final path = downloadsDir?.path ?? '~/Downloads';
+      await Process.run('xdg-open', [path]);
       return true;
     }
     return false;

@@ -45,7 +45,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     setState(() => _isLoading = false);
 
-    if (result['success'] == true && mounted) {
+    if (result.success && mounted) {
       setState(() => _codeSent = true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -56,7 +56,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['error'] ?? AppLocalizations.of(context).get('failed_send_code')),
+          content: Text(result.error ?? AppLocalizations.of(context).get('failed_send_code')),
           backgroundColor: AppColors.error,
         ),
       );
@@ -136,7 +136,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha:0.1),
                           blurRadius: 20,
                           offset: const Offset(0, 10),
                         ),

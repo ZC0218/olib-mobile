@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/zlibrary_provider.dart';
-import '../../models/book.dart';
+import 'package:olib_api_plugin/olib_api_plugin.dart';
+import '../../models/display_book.dart';
 import '../../widgets/book_card.dart';
 import '../../widgets/book_list_tile.dart';
 import '../../widgets/loading_widget.dart';
@@ -56,22 +57,18 @@ class _SimilarBooksScreenState extends ConsumerState<SimilarBooksScreen> {
     });
     
     try {
-      final response = await api.Similar(args.bookId.toString(), args.hashId);
-      final success = response['success'];
-      
-      if ((success == true || success == 1) && response.containsKey('books')) {
-        final booksData = response['books'] as List<dynamic>;
-        final books = booksData.map((json) => Book.fromJson(json)).toList();
-        
+      final response = await api.similar(args.bookId.toString(), args.hashId);
+
+      if (response.success && response.data != null) {
         setState(() {
-          _books = books;
+          _books = response.data!;
           _isLoading = false;
         });
       } else {
         setState(() {
           _isLoading = false;
           _hasError = true;
-          _errorMessage = response['error']?.toString() ?? 'Failed to load similar books';
+          _errorMessage = response.error ?? 'Failed to load similar books';
         });
       }
     } catch (e) {
@@ -102,7 +99,7 @@ class _SimilarBooksScreenState extends ConsumerState<SimilarBooksScreen> {
               color: Theme.of(context).cardColor,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha:0.05),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -153,7 +150,7 @@ class _SimilarBooksScreenState extends ConsumerState<SimilarBooksScreen> {
                                     Text(
                                       '${_books.length} ${l10n.get('books_found')}',
                                       style: TextStyle(
-                                        color: AppColors.textSecondary,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -185,7 +182,7 @@ class _SimilarBooksScreenState extends ConsumerState<SimilarBooksScreen> {
                                         itemBuilder: (context, index) {
                                           final book = _books[index];
                                           return BookListTile(
-                                            book: book,
+                                            book: book.toDisplay(),
                                             onTap: () {
                                               Navigator.of(context).pushNamed(
                                                 AppRoutes.bookDetail,
@@ -207,7 +204,7 @@ class _SimilarBooksScreenState extends ConsumerState<SimilarBooksScreen> {
                                         itemBuilder: (context, index) {
                                           final book = _books[index];
                                           return BookCard(
-                                            book: book,
+                                            book: book.toDisplay(),
                                             onTap: () {
                                               Navigator.of(context).pushNamed(
                                                 AppRoutes.bookDetail,
