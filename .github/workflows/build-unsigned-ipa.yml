@@ -3,7 +3,7 @@ run-name: 打包无签名iOS IPA
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 网页手动运行按钮，缩进规范必显示
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,19 +20,20 @@ jobs:
           flutter-version: 3.38.7
           cache: true
 
-      # 环境校验 + 清理缓存
-      - name: Flutter Doctor & Clean
+      # 开启Swift Package Manager + 环境校验 + 清理缓存
+      - name: Flutter初始化配置、Doctor & Clean
         run: |
+          flutter config --enable-swift-package-manager
           flutter doctor
           flutter clean
 
-      # 核心修复：注释掉缺失的本地vendor插件依赖，解决pub get失败
-      - name: 临时注释不存在的本地依赖 olib_api_plugin
+      # 临时注释不存在的本地依赖 olib_api_plugin（解决上一轮路径缺失报错）
+      - name: 注释缺失本地vendor插件依赖
         run: |
           sed -i '' '/olib_api_plugin:/,/path:/ s/^/#/' pubspec.yaml
           cat pubspec.yaml
 
-      # 安装pub依赖（现在不会报路径缺失错误）
+      # 安装pub依赖（已开启SPM，兼容receive_sharing_intent）
       - name: Install pub dependencies
         run: flutter pub get
 
