@@ -24,6 +24,13 @@ jobs:
           flutter doctor
           flutter clean
 
+      - name: 注释本地olib_api_plugin依赖
+        run: |
+          # 注释掉缺失的本地插件依赖
+          perl -i -pe 's/^(\s*olib_api_plugin:)/#$1/' pubspec.yaml
+          perl -i -pe 's/^(\s*path: vendor\/olib_api_plugin)/#$1/' pubspec.yaml
+          echo "已注释olib_api_plugin本地依赖"
+
       - name: 降级device_info_plus
         run: |
           if ! grep -q "dependency_overrides:" pubspec.yaml; then
@@ -45,9 +52,10 @@ jobs:
           echo "=== 修改前 Podfile ==="
           head -10 Podfile
           
-          # 用perl修改Podfile，兼容各种格式
+          # 取消platform行的注释（如果有）
           perl -i -pe 's/^#\s*platform\s+:ios/platform :ios/' Podfile
           
+          # 修改或插入platform版本
           if grep -q "platform :ios" Podfile; then
             perl -i -pe 's/platform :ios,\s*['\''"]?\d+\.\d+['\''"]?/platform :ios, "13.0"/' Podfile
           else
