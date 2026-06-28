@@ -1,11 +1,12 @@
 name: Build Unsigned IPA (Flutter 3.38.7)
 run-name: 编译无签名IPA | Flutter 3.38.7 Stable
+# 此处on下全部配置严格同级，不要缩进错乱
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch: # 手动运行开关，同级才生效
 
 jobs:
   build_ios_unsigned:
